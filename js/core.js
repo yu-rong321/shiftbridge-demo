@@ -1,6 +1,6 @@
 // Deterministic evidence rules. No model, network service or operational control.
 export const STATUSES = ['OPEN', 'MONITORING', 'RESOLVED'];
-const fields = ['equipmentId','issueId','timestamp','author','shift','symptom','action','status','nextAction','verification'];
+const fields = ['equipmentId','issueId','timestamp','author','shift','symptom','action','status','nextAction','verification','rawNote'];
 const clean = input => Object.fromEntries(fields.map(key => [key, typeof input?.[key] === 'string' ? input[key].trim() : '']));
 const known = (data, id) => data.equipment.some(e => e.id === id);
 const validTime = value => {
@@ -10,7 +10,7 @@ const validTime = value => {
 };
 const utc = value => new Date(value.endsWith('Z') ? value : `${value}Z`).toISOString();
 
-export function validateRecord(input, data) {
+export function validateRecord(input, data, local=[]) {
   const r = clean(input), errors = [];
   const error = (field, message) => errors.push({field, message});
   if (!known(data, r.equipmentId)) error('equipmentId','Select a known equipment ID.');
@@ -24,53 +24,64 @@ export function validateRecord(input, data) {
   if (r.status === 'RESOLVED' && r.verification.length < 12) error('verification','RESOLVED requires specific verification evidence (at least 12 characters).');
   const missingVerification=/\b(?:unverified|unresolved|not verified|not checked|not completed|remains open)\b|\bverification(?: is| remains)? (?:pending|unknown|not yet)\b|\bno (?:repair |post[- ]repair )?verification\b|\bno (?:repair |post[- ]repair |verification )evidence\b|\bno evidence(?:\s*(?:[.;]|$)|\s+(?:exists|available|recorded|provided|yet|for (?:repair|verification)|to (?:verify|confirm)|of (?:a )?(?:repair|verification|completion)))/i;
   if (r.status === 'RESOLVED' && missingVerification.test(r.verification)) error('verification','The verification still describes missing evidence or an open issue. Keep the issue unresolved or record fresh verification.');
-  if (r.issueId && !data.records.some(x => x.issueId === r.issueId && x.equipmentId === r.equipmentId)) error('issueId','This issue does not belong to the selected equipment.');
-  for (const key of fields) if (r[key].length > (['symptom','action','nextAction','verification'].includes(key) ? 1500 : 100)) error(key,'This field is too long.');
+  const seedIssue=data.records.some(x=>x.issueId===r.issueId&&x.equipmentId===r.equipmentId);
+  const localIssue=Array.isArray(local)&&local.some(x=>x.issueId===r.issueId&&x.equipmentId===r.equipmentId&&x.confirmed===true&&x.confirmationKind==='human_demo');
+  if(r.issueId && !seedIssue && !localIssue) error('issueId','This issue is not in the selected equipment\'s confirmed history.');
+  for (const key of fields) if (r[key].length > (['symptom','action','nextAction','verification'].includes(key) ? 1500 : key==='rawNote' ? 2000 : 100)) error(key,'This field is too long.');
   return errors;
 }
 
-export function reviewRecord(input, data) {
-  const errors = validateRecord(input,data);
+export function reviewRecord(input, data, local=[]) {
+  const errors = validateRecord(input,data,local);
   if (errors.length) throw new Error(errors.map(e=>e.message).join(' '));
   const record = clean(input);
   return {record, snapshot: JSON.stringify(record)};
 }
 
-export function confirmRecord(review, acknowledged, data, id) {
+export function confirmRecord(review, acknowledged, data, id, local=[]) {
   if (acknowledged !== true) throw new Error('Human confirmation is required.');
   if (!review || review.snapshot !== JSON.stringify(clean(review.record))) throw new Error('Review changed. Review the record again.');
-  const record = reviewRecord(review.record,data).record;
+  const record = reviewRecord(review.record,data,local).record;
   if (!/^LOCAL-[a-zA-Z0-9-]+$/.test(id)) throw new Error('Invalid local record identity.');
   const confirmedAt = new Date().toISOString();
   return {...record, timestamp:utc(record.timestamp), id, issueId:record.issueId || `ISS-${id}`, confirmed:true, confirmationKind:'human_demo', confirmedBy:record.author, confirmedAt};
 }
 
-function recordErrors(r, data) {
-  // A new local issue has no seed reference; validate the remaining fields separately.
-  return validateRecord({...r, issueId:r?.issueId?.startsWith('ISS-LOCAL-') ? '' : r?.issueId},data);
+function recordErrors(r,data,priorLocal=[]) {
+  // A source creates its own ISS-LOCAL-* identity. Subsequent shifts must cite a
+  // previously accepted confirmed source from the SAME equipment and issue.
+  const creation=typeof r?.id==='string' && r.issueId===`ISS-${r.id}` && /^LOCAL-[a-zA-Z0-9-]+$/.test(r.id);
+  return validateRecord({...r,issueId:creation?'':r.issueId},data,priorLocal);
 }
 
-export function restoreRecords(raw, data) {
-  if (!raw) return {records:[],warning:''};
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length > 1000) throw new Error('Invalid storage format.');
-    const records = [], seen = new Set();
-    let rejected = 0;
-    for (const r of parsed) {
-      if (!r || !/^LOCAL-[a-zA-Z0-9-]+$/.test(r.id) || r.confirmed !== true || r.confirmationKind !== 'human_demo' || r.confirmedBy !== r.author || !validTime(r.confirmedAt) || recordErrors(r,data).length || (r.issueId?.startsWith('ISS-LOCAL-') && r.issueId !== `ISS-${r.id}`)) {rejected++;continue;}
-      if (!seen.has(r.id)) {records.push(r);seen.add(r.id);}
+export function restoreRecords(raw,data){
+  if(!raw)return {records:[],warning:''};
+  try{
+    const parsed=JSON.parse(raw);
+    if(!Array.isArray(parsed)||parsed.length>1000)throw new Error('Invalid storage format.');
+    const records=[],seen=new Set();
+    let rejected=0;
+    for(const r of parsed){
+      const idOk=typeof r?.id==='string'&&/^LOCAL-[a-zA-Z0-9-]+$/.test(r.id);
+      const metadataOk=idOk&&r.confirmed===true&&r.confirmationKind==='human_demo'&&r.confirmedBy===r.author&&validTime(r.confirmedAt);
+      const sourceOk=metadataOk&&!recordErrors(r,data,records).length;
+      if(!sourceOk||seen.has(r?.id)){rejected++;continue;}
+      records.push(r);seen.add(r.id);
     }
-    return {records,warning:rejected ? `${rejected} invalid local record(s) excluded. Reset demo data to clear them.` : ''};
-  } catch {
+    return {records,warning:rejected?`${rejected} invalid local record(s) excluded. Reset demo data to clear them.`:''};
+  }catch{
     return {records:[],warning:'Local demo data could not be read. Only the synthetic seed records are shown.'};
   }
 }
 
-export function recordsFor(data, local, equipmentId) {
-  if (!known(data,equipmentId)) return [];
-  return [...data.records,...local].filter(r=>r.equipmentId===equipmentId && r.confirmed===true && !recordErrors(r,data).length)
-    .sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp) || Date.parse(b.confirmedAt)-Date.parse(a.confirmedAt) || b.id.localeCompare(a.id));
+export function recordsFor(data,local,equipmentId){
+  if(!known(data,equipmentId))return [];
+  // Revalidate local records as an append-only source chain, including links
+  // from one confirmed shift to another. A fabricated local issue is excluded.
+  const accepted=restoreRecords(JSON.stringify(Array.isArray(local)?local:[]),data).records;
+  return [...data.records.filter(r=>r.confirmed===true&&!validateRecord(r,data).length),...accepted]
+    .filter(r=>r.equipmentId===equipmentId)
+    .sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp)||Date.parse(b.confirmedAt)-Date.parse(a.confirmedAt)||b.id.localeCompare(a.id));
 }
 
 export function issuesFor(data, local, equipmentId) {
@@ -88,6 +99,29 @@ export function handover(data, local, equipmentId) {
 
 export function resolveSource(data, local, id, equipmentId) {
   return recordsFor(data,local,equipmentId).find(r=>r.id===id) || data.sops.find(s=>s.id===id && s.equipmentId===equipmentId) || null;
+}
+
+// Narrow, deterministic narrative extractor. This is a local demonstration of
+// drafting, NOT a language model: only explicit observed facts are copied.
+export function parseShiftNote(raw,equipmentId){
+  const note=String(raw??'').trim();
+  const reject=message=>({supported:false,message,draft:null});
+  if(!note||note.length>2000)return reject('Enter a shift note between 1 and 2,000 characters.');
+  const mentioned=[...new Set((note.match(/\bETCH[-\s]?\d{2}\b/gi)||[]).map(x=>x.toUpperCase().replace(/\s/g,'').replace(/^ETCH(\d)/,'ETCH-$1')))];
+  if(mentioned.length!==1||mentioned[0]!==equipmentId)return reject('Include exactly the selected equipment ID. The demo does not infer equipment identity.');
+  const observation=note.match(/\b(?:i|we)\s+(?:observed|noticed)\s+([^.!?\n]{8,450})[.!?]/i);
+  const action=note.match(/\b(?:i|we)\s+((?:reviewed|checked|inspected|recorded|captured|logged)\s+[^.!?\n]{8,450})[.!?]/i);
+  const next=note.match(/\bnext shift\s*:\s*([^.!?\n]{8,450})[.!?]?/i);
+  const person=note.match(/\brecorded by\s*:\s*([a-z][a-z' -]{1,60})(?:[.!?\n]|$)/i);
+  const shift=note.match(/\b(day|night)\s+shift\b/i);
+  const state=note.match(/\b(?:issue|fault|alarm)\s+(?:is|remains|still)\s+(open|monitoring)\b/i);
+  const conflicting=/\b(?:issue|fault|alarm)\s+(?:is|remains|still)\s+(?:resolved|closed|fixed)\b/i.test(note);
+  if(!observation||!action||!next||!person||!shift||!state||conflicting)return reject('This note is outside the supported demo pattern or contains conflicting status. Use the sample narrative or fill the review fields manually; no facts were inferred.');
+  return {supported:true,message:'Explicit details extracted by fixed local rules. Review every field before confirmation.',draft:{
+    equipmentId,issueId:'',author:person[1].trim(),shift:shift[1].toLowerCase()==='day'?'Day':'Night',
+    symptom:observation[1].trim(),action:`We ${action[1].trim()}`,status:state[1].toUpperCase(),
+    nextAction:next[1].trim(),verification:'',rawNote:note
+  }};
 }
 
 // SOP validity is evaluated against the fictional dataset's fixed scenario date,
