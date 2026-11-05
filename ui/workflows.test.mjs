@@ -67,6 +67,9 @@ test('sources open in a modal scoped to the selected equipment',async()=>{
 test('Q&A cites evidence and abstains on unsupported and cross-equipment questions',async()=>{
  const c=await open();try{await go(c,'knowledge');click(c,'[data-question="What issues are open?"]');assert.ok(c.d.querySelector('#answer-result [data-source]'));assert.match(c.d.querySelector('#answer-result').textContent,/OPEN/);input(c,'question','Has ETCH-02 been repaired?');submit(c,'question-form');assert.match(c.d.querySelector('#answer-result').textContent,/No supported answer/);click(c,'[data-question="What is the production yield forecast?"]');assert.equal(c.d.querySelector('#answer-result [data-source]'),null);}finally{c.close();}
 });
+test('Q&A discloses the current demo version',async()=>{
+ const c=await open();try{await go(c,'knowledge');const content=c.d.querySelector('main').textContent;assert.match(content,/This v0\.4 simulates/);assert.doesNotMatch(content,/This v0\.2 simulates/);}finally{c.close();}
+});
 test('unavailable persistence does not claim a successful save',async()=>{
  const c=await open({failStorage:true});try{assert.equal(c.d.querySelector('#storage-warning').hidden,false);await sample(c);submit(c,'record-form');confirm(c);assert.ok(c.d.querySelector('#acknowledge'));assert.ok(!c.d.querySelector('main').textContent.includes('Demo record saved'));assert.equal(c.w.localStorage.getItem(key),null);}finally{c.close();}
 });
