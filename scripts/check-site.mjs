@@ -19,10 +19,13 @@ const fixture=JSON.parse(await readFile('data/demo.json','utf8'));
 assert.equal(fixture.equipment.length,2);assert.equal(fixture.records.length,6);const sources=[...fixture.records,...fixture.sops];
 assert.equal(new Set(sources.map(x=>x.id)).size,sources.length);
 assert.equal(fixture.sops.length,6);
+assert.match(fixture.guidedDemoNote,/ETCH-01/);
+assert.match(await readFile('js/app.js','utf8'),/Start guided demo/);
+assert.match(await readFile('js/app.js','utf8'),/Generate demo draft/);
 for(const equipment of fixture.equipment){
   for(const topic of new Set(fixture.sops.filter(s=>s.equipmentId===equipment.id).map(s=>s.topic))){
     const catalog=sopCatalog(fixture,equipment.id,topic);
     assert.equal(catalog.error,'',`${equipment.id} ${topic}: ${catalog.error}`);
   }
 }
-console.log('Static checks passed: local asset links, five routes, English metadata, mobile styles, keyboard focus, unique sources, valid SOP version chains and no external runtime services.');
+console.log('Static checks passed: local asset links, five routes, English metadata, mobile styles, keyboard focus, unique sources, guided narrative, valid SOP version chains and no external runtime services.');
