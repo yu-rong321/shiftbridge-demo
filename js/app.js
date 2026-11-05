@@ -156,7 +156,7 @@ document.addEventListener('click',event=>{
  if(action==='tour-start'){
    // Starting the tour is non-destructive: prior browser-local records remain intact.
    equipmentId='ETCH-01';guidedStep=0;rawNote='';noteMessage='';draft=null;review=null;lastSaved=null;answer=null;question='';
-   if(location.hash!=='#overview')location.hash='#overview';else render(true);
+   location.hash='#overview';render(true);
  }
  if(action==='tour-next'){
    if(guidedStep===0){
