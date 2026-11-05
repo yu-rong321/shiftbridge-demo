@@ -90,6 +90,58 @@ export function resolveSource(data, local, id, equipmentId) {
   return recordsFor(data,local,equipmentId).find(r=>r.id===id) || data.sops.find(s=>s.id===id && s.equipmentId===equipmentId) || null;
 }
 
+// SOP validity is evaluated against the fictional dataset's fixed scenario date,
+// not the viewer's current clock. Historical sources remain inspectable, never operative.
+const SOP_VERSION_STATUSES = ['ACTIVE','SUPERSEDED','EXPIRED','WITHDRAWN'];
+const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
+const isDay = d => typeof d === 'string' && dayPattern.test(d) && !Number.isNaN(Date.parse(d+'T00:00:00Z')) && new Date(d+'T00:00:00Z').toISOString().slice(0,10) === d;
+
+export function sopVersionState(s, data) {
+  if (!s || !isDay(data?.scenarioDate) || !isDay(s.effectiveDate) ||
+      (s.retiredDate !== null && !isDay(s.retiredDate)) ||
+      !SOP_VERSION_STATUSES.includes(s.versionStatus) ||
+      s.approvalStatus !== 'APPROVED' ||
+      (s.retiredDate !== null && s.retiredDate <= s.effectiveDate) ||
+      (s.versionStatus === 'ACTIVE' && (s.supersededById || s.retiredDate)) ||
+      (s.versionStatus !== 'ACTIVE' && !s.retiredDate)) return 'INVALID';
+  if (data.scenarioDate < s.effectiveDate) return 'NOT_YET_EFFECTIVE';
+  if (s.retiredDate && data.scenarioDate >= s.retiredDate) return s.versionStatus === 'ACTIVE' ? 'EXPIRED' : s.versionStatus;
+  // An archival revision is never eligible even if metadata contradicts its dates.
+  if (s.versionStatus !== 'ACTIVE') return 'INVALID';
+  return 'ACTIVE';
+}
+
+export function sopCatalog(data, equipmentId, topic=null) {
+  const relevant=data.sops.filter(s=>s.equipmentId===equipmentId && (topic===null || s.topic===topic));
+  const invalid=message=>({active:[],archived:[],error:message});
+  if (!relevant.length) return invalid('No SOP evidence is available for this equipment and topic.');
+  if (relevant.some(s=>sopVersionState(s,data)==='INVALID')) return invalid('SOP validity metadata is incomplete or contradictory.');
+  for (const s of relevant) {
+    if (s.supersededById) {
+      const next=data.sops.find(n=>n.id===s.supersededById);
+      if (!next || next.equipmentId!==s.equipmentId || next.topic!==s.topic ||
+          next.supersedesId!==s.id || next.effectiveDate!==s.retiredDate)
+        return invalid('SOP supersession chain is broken or crosses equipment/topic boundaries.');
+    }
+    if (s.supersedesId) {
+      const previous=data.sops.find(p=>p.id===s.supersedesId);
+      if (!previous || previous.equipmentId!==s.equipmentId || previous.topic!==s.topic ||
+          previous.supersededById!==s.id || s.effectiveDate!==previous.retiredDate)
+        return invalid('SOP successor metadata is inconsistent.');
+    }
+  }
+  const topics=[...new Set(relevant.map(s=>s.topic))];
+  const active=[],archived=[];
+  for (const t of topics) {
+    const group=relevant.filter(s=>s.topic===t);
+    const current=group.filter(s=>sopVersionState(s,data)==='ACTIVE');
+    if (current.length!==1) return invalid('SOP approval or version status is ambiguous: no unique effective version.');
+    active.push(current[0]);
+    archived.push(...group.filter(s=>s.versionStatus!=='ACTIVE'));
+  }
+  return {active,archived,error:''};
+}
+
 export function answerQuestion(data, local, equipmentId, question) {
   const abstain = message => ({supported:false,message,items:[]});
   const q=String(question||'').trim().toLowerCase();
@@ -98,7 +150,8 @@ export function answerQuestion(data, local, equipmentId, question) {
   if (q.length>500) return abstain('Keep the question under 500 characters.');
   const mentioned=q.match(/etch[\s-]*\d+/g)||[];
   if (mentioned.some(id=>id.replace(/\s+/g,'').replace(/^etch-?/,'ETCH-')!==equipmentId)) return abstain(`This answer is scoped to ${equipmentId}. Select the other equipment to inspect its evidence.`);
-  if (/bypass|override|disable|setpoint|recipe|restart|start production|safe to|can i|may i|should i|yield|forecast|cost|temperature|pressure|how many|how long|why|root cause|compare/.test(q)) return abstain('The available sources do not establish that answer. This demo cannot infer causes, give operating parameters or authorize equipment operation.');
+  const historicalSopQuestion=/\b(old|older|previous|outdated|obsolete|superseded|expired|legacy|archived?|historical)\b|\brev(?:ision)?\s*0[.]9\b/.test(q) && /\bsop\b|procedure|revision/.test(q);
+  if (/bypass|override|disable|setpoint|recipe|restart|start production|safe to|yield|forecast|cost|temperature|pressure|how many|how long|why|root cause|compare/.test(q) || (/(?:can|may|should) i\b/.test(q) && !historicalSopQuestion)) return abstain('The available sources do not establish that answer. This demo cannot infer causes, give operating parameters or authorize equipment operation.');
   let issues=issuesFor(data,local,equipmentId);
   const requestedIssues=(q.match(/\biss-[a-z0-9-]+/g)||[]).map(id=>id.toUpperCase());
   if (requestedIssues.some(id=>!issues.some(i=>i.issueId===id))) return abstain(`That issue has no confirmed evidence in the ${equipmentId} workspace. Check its ID and equipment scope.`);
@@ -106,17 +159,31 @@ export function answerQuestion(data, local, equipmentId, question) {
   const statusQuestion=/status|open|unresolved|fixed|repair|resolved|handover|follow.?up|brief|issues/.test(q);
   const sopQuestion=/sop|procedure|checklist|check|pumpdown|vacuum|reflected|\brf\b|cooling|closure/.test(q);
   const items=[];
-  if (sopQuestion && !statusQuestion) {
-    let topics=[];
+  if (sopQuestion && (!statusQuestion || historicalSopQuestion)) {
+    const topics=[];
     if (/pumpdown|vacuum/.test(q)) topics.push('pumpdown');
     if (/reflected|\brf\b/.test(q)) topics.push('rf');
     if (/cooling/.test(q)) topics.push('cooling');
     if (/closure|close|verification/.test(q)) topics.push('closure');
-    const generalSopRequest=/^(?:(?:show|list)(?: the)?(?: available)? (?:sops?|procedures?)|what (?:sops?|procedures?) (?:are available|are in scope))\??$/.test(q);
-    if (!topics.length && !generalSopRequest) return abstain(`No matching SOP topic is available for ${equipmentId}. Use one of the listed SOP topics.`);
-    const sops=data.sops.filter(s=>s.equipmentId===equipmentId && (!topics.length||topics.includes(s.topic)));
-    if (!sops.length) return abstain(`No matching SOP section is available for ${equipmentId}.`);
-    for (const s of sops) items.push({text:`${s.document} ${s.section}: ${s.text}`,sourceIds:[s.id]});
+    const generalSopRequest=/\b(sop|sops|procedure|procedures|revision|revisions)\b/.test(q) &&
+      /\b(current|active|valid|effective|available|list|show|which|version|revisions)\b/.test(q);
+    if (!topics.length && !generalSopRequest && !historicalSopQuestion)
+      return abstain(`No matching SOP topic is available for ${equipmentId}. Use one of the listed SOP topics.`);
+    const selected=topics.length?topics:[...new Set(data.sops.filter(s=>s.equipmentId===equipmentId).map(s=>s.topic))];
+    for (const topic of selected) {
+      const catalog=sopCatalog(data,equipmentId,topic);
+      if (catalog.error) return abstain(`Unable to establish an approved current SOP for ${equipmentId} / ${topic}: ${catalog.error}`);
+      if (historicalSopQuestion) {
+        if (!catalog.archived.length) continue;
+        for (const old of catalog.archived) {
+          const current=catalog.active[0];
+          items.push({text:`${old.document} ${old.section} ${old.revision} is ${old.versionStatus} as of ${data.scenarioDate} (effective ${old.effectiveDate}; retired ${old.retiredDate}). Its successor is ${current.document} ${current.section} ${current.revision}, effective ${current.effectiveDate}. Do not treat the archived revision as current guidance. This fictional reference does not authorize equipment operation.`,sourceIds:[old.id,current.id]});
+        }
+      } else {
+        for (const current of catalog.active) items.push({text:`${current.document} ${current.section} ${current.revision} — ACTIVE as of ${data.scenarioDate} (effective ${current.effectiveDate}). ${current.text} This is fictional reference material, not operational authorization.`,sourceIds:[current.id]});
+      }
+    }
+    if (historicalSopQuestion && !items.length) return abstain(`No historical SOP revision is recorded for ${equipmentId} and the requested topic.`);
   } else if (statusQuestion) {
     if (/\bopen\b|\bunresolved\b|follow.?up/.test(q) && !/\bresolved\b|\bclosed\b/.test(q)) issues=issues.filter(i=>i.status!=='RESOLVED');
     for (const i of issues) items.push({text:`${i.issueId} — ${i.status}. ${i.observation} ${i.status==='RESOLVED' ? `Recorded verification: ${i.verification}` : `Next action: ${i.nextAction} No verified repair is established for this issue.`}`,sourceIds:[i.sourceId]});
