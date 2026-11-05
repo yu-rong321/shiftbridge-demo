@@ -35,6 +35,16 @@ function confirm(ctx){click(ctx,'#acknowledge');click(ctx,'[data-action="save-re
 test('all five views render in the English workspace',async()=>{
  const c=await open();try{for(const [hash,title] of [['overview','Facility Overview'],['record','Record My Shift'],['history','Maintenance History'],['brief','Brief Next Shift'],['knowledge','Equipment Knowledge Q&A']]){await go(c,hash);assert.equal(c.d.querySelector('h1').textContent,title);}}finally{c.close();}
 });
+test('overview shows a three-shift case with individually inspectable sources',async()=>{
+ const c=await open();try{
+  await go(c,'overview');
+  const trail=c.d.querySelector('[aria-label="Three-shift evidence trail"]');
+  assert.ok(trail);
+  assert.deepEqual([...trail.querySelectorAll('[data-source]')].map(x=>x.dataset.source),['REC-104','REC-105','REC-106']);
+  click(c,'[data-source="REC-105"]');
+  assert.match(c.d.querySelector('#source-content').textContent,/MONITORING/);
+ }finally{c.close();}
+});
 test('required field validation prevents entry into review',async()=>{
  const c=await open();try{await go(c,'record');submit(c,'record-form');assert.equal(c.d.querySelector('#validation-errors').hidden,false);assert.equal(c.d.querySelector('#author').getAttribute('aria-invalid'),'true');assert.equal(c.w.localStorage.getItem(key),null);}finally{c.close();}
 });
@@ -62,7 +72,7 @@ test('unavailable persistence does not claim a successful save',async()=>{
 });
 test('reset cancellation keeps data; reset confirmation clears only demo records',async()=>{
  const r=core.confirmRecord(core.reviewRecord({equipmentId:'ETCH-01',issueId:'',timestamp:'2026-11-05T14:00',author:'Jamie',shift:'Day',symptom:'Local observation',action:'Logged observation',status:'OPEN',nextAction:'Owner review',verification:''},seed),true,seed,'LOCAL-UI');
- const c=await open({storage:JSON.stringify([r])});try{c.w.localStorage.setItem('unrelated-key','keep');click(c,'#reset-demo');click(c,'[data-action="cancel-reset"]');assert.ok(c.w.localStorage.getItem(key));click(c,'#reset-demo');click(c,'[data-action="confirm-reset"]');assert.equal(c.w.localStorage.getItem(key),null);assert.equal(c.w.localStorage.getItem('unrelated-key'),'keep');assert.equal(c.d.querySelectorAll('.stat-number')[2].textContent,'6');}finally{c.close();}
+ const c=await open({storage:JSON.stringify([r])});try{c.w.localStorage.setItem('unrelated-key','keep');click(c,'#reset-demo');click(c,'[data-action="cancel-reset"]');assert.ok(c.w.localStorage.getItem(key));click(c,'#reset-demo');click(c,'[data-action="confirm-reset"]');assert.equal(c.w.localStorage.getItem(key),null);assert.equal(c.w.localStorage.getItem('unrelated-key'),'keep');assert.equal(c.d.querySelectorAll('.stat-number')[2].textContent,'9');}finally{c.close();}
 });
 test('source content and user text are escaped',async()=>{
  const c=await open();try{await sample(c);input(c,'symptom','<img src=x onerror="window.__bad=true">');submit(c,'record-form');assert.equal(c.d.querySelector('main img'),null);assert.match(c.d.querySelector('main').textContent,/<img/);assert.equal(c.w.__bad,undefined);}finally{c.close();}
@@ -171,7 +181,7 @@ test('new locally created issue is selectable and traceable on another shift',as
    await go(c,'record');
    click(c,'[data-action="sample"]');
    input(c,'issueId','');
-   input(c,'timestamp','2026-11-05T14:00');
+   input(c,'timestamp','2026-11-05T10:00');
    submit(c,'record-form');confirm(c);
    issue=JSON.parse(c.w.localStorage.getItem(key))[0].issueId;
    assert.match(issue,/^ISS-LOCAL-/);
@@ -179,7 +189,7 @@ test('new locally created issue is selectable and traceable on another shift',as
    assert.ok([...c.d.querySelector('#issueId').options].some(o=>o.value===issue));
    click(c,'[data-action="sample"]');
    input(c,'issueId',issue);
-   input(c,'timestamp','2026-11-05T22:00');
+   input(c,'timestamp','2026-11-05T12:00');
    input(c,'author','Maya Lin');
    input(c,'shift','Night');
    input(c,'symptom','The issue was observed again during the night shift.');

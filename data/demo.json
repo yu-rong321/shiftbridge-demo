@@ -43,6 +43,57 @@
   ],
   "records": [
     {
+      "id": "REC-104",
+      "equipmentId": "ETCH-01",
+      "issueId": "ISS-103",
+      "timestamp": "2026-11-03T07:30:00Z",
+      "author": "Maya Lin",
+      "shift": "Day",
+      "symptom": "A fictional loadlock position indicator intermittently disagreed with its event-log state.",
+      "action": "Recorded the indicator discrepancy and preserved the synthetic event excerpt. No repair was performed.",
+      "status": "OPEN",
+      "nextAction": "Night shift: review the next indicator event and retain the discrepancy evidence.",
+      "verification": "No repair verification recorded.",
+      "confirmed": true,
+      "confirmationKind": "human_demo",
+      "confirmedBy": "Maya Lin",
+      "confirmedAt": "2026-11-03T07:35:00Z"
+    },
+    {
+      "id": "REC-105",
+      "equipmentId": "ETCH-01",
+      "issueId": "ISS-103",
+      "timestamp": "2026-11-03T20:40:00Z",
+      "author": "Jordan Wu",
+      "shift": "Night",
+      "symptom": "The same synthetic loadlock indicator discrepancy appeared once more during observation.",
+      "action": "Compared the event excerpt with REC-104 and documented recurrence. Cause and repair remained unverified.",
+      "status": "MONITORING",
+      "nextAction": "Day shift: request equipment-owner review of the two observed event excerpts.",
+      "verification": "Inspection only. No verified repair.",
+      "confirmed": true,
+      "confirmationKind": "human_demo",
+      "confirmedBy": "Jordan Wu",
+      "confirmedAt": "2026-11-03T20:44:00Z"
+    },
+    {
+      "id": "REC-106",
+      "equipmentId": "ETCH-01",
+      "issueId": "ISS-103",
+      "timestamp": "2026-11-04T08:15:00Z",
+      "author": "Maya Lin",
+      "shift": "Day",
+      "symptom": "The fictional loadlock indicator was stable across the documented follow-up observation window.",
+      "action": "Reviewed both earlier excerpts and completed the synthetic follow-up checklist; no production release was performed.",
+      "status": "RESOLVED",
+      "nextAction": "Retain the history; investigate again if the fictional indicator discrepancy recurs.",
+      "verification": "Maya Lin recorded a completed fictional follow-up check: three observed indicator transitions matched the event log, with no discrepancy in the stated window.",
+      "confirmed": true,
+      "confirmationKind": "human_demo",
+      "confirmedBy": "Maya Lin",
+      "confirmedAt": "2026-11-04T08:20:00Z"
+    },
+    {
       "id": "REC-101",
       "equipmentId": "ETCH-01",
       "issueId": "ISS-101",
@@ -243,5 +294,10 @@
       "supersededById": "SOP-02-2"
     }
   ],
+  "featuredCase": {
+    "equipmentId": "ETCH-01",
+    "issueId": "ISS-103",
+    "title": "Three-shift loadlock indicator follow-up"
+  },
   "guidedDemoNote": "On ETCH-01 during the Day shift, I observed a new intermittent chamber door indicator warning during a fictional pre-run check. I reviewed the simulated event log and recorded the warning without adjusting the equipment. The issue remains OPEN. Next shift: Maya Lin will review the logged warning with the equipment owner. Recorded by: Jamie Park."
 }

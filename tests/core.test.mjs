@@ -116,6 +116,40 @@ test('negative verification cannot turn an OPEN issue into verified completion',
 test('impossible calendar dates are rejected',()=>{
   assert.ok(validateRecord({...valid,timestamp:'2026-02-30T12:00'},data).some(x=>x.field==='timestamp'));
 });
+test('an observation dated tomorrow cannot become a confirmed issue state',()=>{
+  const tomorrow=new Date(Date.now()+24*60*60*1000).toISOString().slice(0,16);
+  assert.ok(validateRecord({...valid,timestamp:tomorrow,issueId:'ISS-101'},data).some(x=>x.field==='timestamp'));
+});
+test('a linked issue cannot silently rewind or duplicate its latest observation time',()=>{
+  for(const timestamp of ['2026-11-04T18:00','2026-11-05T05:40']){
+    assert.ok(validateRecord({...valid,issueId:'ISS-101',timestamp},data).some(x=>x.field==='timestamp'));
+  }
+});
+test('a restored local issue update with an earlier time is rejected',()=>{
+  const first=saved({timestamp:'2026-11-05T14:00',issueId:'ISS-101'});
+  const older={...first,id:'LOCAL-OLDER',timestamp:'2026-11-05T13:00:00Z'};
+  const restored=restoreRecords(JSON.stringify([first,older]),data);
+  assert.deepEqual(restored.records.map(r=>r.id),[first.id]);
+  assert.match(restored.warning,/invalid local record/);
+});
+test('the guided three-shift story preserves one issue and a sourced resolution',()=>{
+  const series=data.records.filter(r=>r.issueId==='ISS-103');
+  assert.equal(series.length,3);
+  assert.deepEqual(series.map(r=>r.status),['OPEN','MONITORING','RESOLVED']);
+  assert.ok(series.every(r=>r.equipmentId==='ETCH-01' && resolveSource(data,[],r.id,'ETCH-01')));
+  assert.ok(handover(data,[],'ETCH-01').completed.some(i=>i.issueId==='ISS-103' && i.sourceId===series[2].id));
+});
+test('a mixed SOP and issue-status question does not return a misleading partial answer',()=>{
+  const response=answerQuestion(data,[],'ETCH-01','What is the pumpdown SOP and latest status of ISS-101?');
+  assert.equal(response.supported,false);
+  assert.deepEqual(response.items,[]);
+});
+test('asking what was checked for a known issue retrieves maintenance evidence, not a missing SOP topic',()=>{
+  const response=answerQuestion(data,[],'ETCH-01','What was checked for ISS-101?');
+  assert.equal(response.supported,true);
+  assert.ok(response.items.length>0);
+  assert.ok(response.items.every(i=>i.sourceIds.every(id=>data.records.find(r=>r.id===id)?.issueId==='ISS-101')));
+});
 test('maintenance answers for one issue exclude unrelated work',()=>{
   const answer=answerQuestion(data,[],'ETCH-01','What maintenance was done for ISS-101?');
   assert.equal(answer.supported,true);
@@ -237,9 +271,9 @@ test('parsed draft still requires human review and confirmation',()=>{
   assert.equal(record.status,'OPEN');
 });
 test('a confirmed local issue can receive a follow-up from another shift',()=>{
-  const root=confirmRecord(reviewRecord({...valid,issueId:'',rawNote:data.guidedDemoNote},data),true,data,'LOCAL-ROOT');
+  const root=confirmRecord(reviewRecord({...valid,timestamp:'2026-11-05T10:00',issueId:'',rawNote:data.guidedDemoNote},data),true,data,'LOCAL-ROOT');
   const follow=confirmRecord(reviewRecord({...valid,issueId:root.issueId,shift:'Night',author:'Maya Lin',
-    timestamp:'2026-11-05T21:00',symptom:'The fictional indicator warning repeated once',
+    timestamp:'2026-11-05T12:00',symptom:'The fictional indicator warning repeated once',
     action:'Reviewed the previous record and captured a fresh observation',
     status:'MONITORING',nextAction:'Day shift: request equipment-owner review'},data,[root]),true,data,'LOCAL-FOLLOW',[root]);
   const restored=restoreRecords(JSON.stringify([root,follow]),data);
@@ -252,18 +286,18 @@ test('a confirmed local issue can receive a follow-up from another shift',()=>{
   assert.deepEqual(answer.items[0].sourceIds,['LOCAL-FOLLOW']);
 });
 test('a local issue may be resolved later only with a new verification',()=>{
-  const root=confirmRecord(reviewRecord(valid,data),true,data,'LOCAL-OPEN');
+  const root=confirmRecord(reviewRecord({...valid,timestamp:'2026-11-05T10:00'},data),true,data,'LOCAL-OPEN');
   assert.ok(validateRecord({...valid,issueId:root.issueId,status:'RESOLVED',nextAction:'',verification:''},data,[root]).some(x=>x.field==='verification'));
-  const done=confirmRecord(reviewRecord({...valid,issueId:root.issueId,shift:'Night',timestamp:'2026-11-05T22:00',
+  const done=confirmRecord(reviewRecord({...valid,issueId:root.issueId,shift:'Night',timestamp:'2026-11-05T12:00',
     status:'RESOLVED',nextAction:'',verification:'Maya Lin verified the fictional acceptance log after checks'},data,[root]),true,data,'LOCAL-DONE',[root]);
   const current=issuesFor(data,[root,done],'ETCH-01').find(i=>i.issueId===root.issueId);
   assert.equal(current.status,'RESOLVED');
   assert.equal(current.sourceId,'LOCAL-DONE');
 });
 test('cross-equipment, forged and out-of-order local issue references fail closed',()=>{
-  const root=confirmRecord(reviewRecord(valid,data),true,data,'LOCAL-CHAIN-ROOT');
+  const root=confirmRecord(reviewRecord({...valid,timestamp:'2026-11-05T10:00'},data),true,data,'LOCAL-CHAIN-ROOT');
   const follow=confirmRecord(reviewRecord({...valid,issueId:root.issueId,shift:'Night',
-    timestamp:'2026-11-05T22:00'},data,[root]),true,data,'LOCAL-CHAIN-FOLLOW',[root]);
+    timestamp:'2026-11-05T12:00'},data,[root]),true,data,'LOCAL-CHAIN-FOLLOW',[root]);
   assert.ok(validateRecord({...valid,equipmentId:'ETCH-02',issueId:root.issueId},data,[root]).some(x=>x.field==='issueId'));
   assert.equal(restoreRecords(JSON.stringify([follow]),data).records.length,0);
   const reversed=restoreRecords(JSON.stringify([follow,root]),data);
