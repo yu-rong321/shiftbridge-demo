@@ -41,7 +41,7 @@ function guideBanner(){
 function overview(){
  const total=data.equipment.reduce((n,e)=>n+recordCount(e.id),0),open=data.equipment.reduce((n,e)=>n+openIssues(e.id).length,0);
  const stats=[['Equipment in scope','2','Etch Bay A · Fab 01','grid',''],['Open follow-ups',String(open),'Unresolved · handover required','alert','amber'],['Confirmed records',String(total),'Synthetic seed + local demo','file','teal'],['Your demo records',String(local.length),'Saved in this browser only','check','']];
- return pageHeader('Facility Overview','A clear picture of your equipment. A continuous record of your shifts.',`<a class="button" href="#record">${icon('plus')}Record My Shift</a>`)+
+ return pageHeader('Facility Overview','A clear picture of your equipment. A continuous record of your shifts.',`<button type="button" class="button" data-action="tour-start">Start guided demo ${icon('arrow')}</button><a class="button secondary" href="#record">${icon('plus')}Record My Shift</a>`)+
  `<div class="stats-grid">${stats.map(([label,n,foot,i,color])=>`<div class="stat-card"><span class="stat-label">${label}</span><span class="stat-icon ${color}">${icon(i)}</span><strong class="stat-number">${n}</strong><div class="stat-foot">${foot}</div></div>`).join('')}</div>
  <div class="section-heading"><div><h2>Equipment workspace</h2><p>Two systems. Separate records, issues and knowledge.</p></div><span class="badge">FAB 01</span></div>
  <div class="equipment-grid">${data.equipment.map(e=>{

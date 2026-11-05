@@ -123,6 +123,7 @@ test('SOP version conflict in demo data abstains in the browser UI',async()=>{
 test('guided visitor path moves from equipment to narrative, review, handover and cited Q&A',async()=>{
  const c=await open();
  try{
+   assert.ok(c.d.querySelector('.page-actions [data-action="tour-start"]'),'Guided entry must be visible in the overview header');
    click(c,'[data-action="tour-start"]');
    assert.match(c.d.querySelector('main').textContent,/STEP 1\/5/);
    click(c,'[data-action="tour-next"]');await tick();
