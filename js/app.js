@@ -169,7 +169,7 @@ async function init(){
    const response=await fetch(new URL('../data/demo.json',import.meta.url));
    if(!response.ok)throw new Error(`Dataset request returned ${response.status}.`);
    data=await response.json();
-   if(data.schemaVersion!==1||!Array.isArray(data.equipment)||!Array.isArray(data.records)||!Array.isArray(data.sops))throw new Error('Unsupported demo dataset.');
+   if(data.schemaVersion!==2||!Array.isArray(data.equipment)||!Array.isArray(data.records)||!Array.isArray(data.sops))throw new Error('Unsupported demo dataset.');
    try{const restored=restoreRecords(window.localStorage.getItem(STORAGE_KEY),data);local=restored.records;warning=restored.warning;const probe=`${STORAGE_KEY}.probe`;window.localStorage.setItem(probe,'1');window.localStorage.removeItem(probe);}
    catch{storageWritable=false;warning='Browser storage is unavailable. Seed data remains readable; simulated saving is disabled.';}
    $('#equipment-select').innerHTML=data.equipment.map(e=>`<option value="${e.id}">${e.id}</option>`).join('');$('#equipment-select').disabled=false;$('#reset-demo').disabled=false;showWarning();render();
