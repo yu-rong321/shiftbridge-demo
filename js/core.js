@@ -110,7 +110,7 @@ export function parseShiftNote(raw,equipmentId){
   const mentioned=[...new Set((note.match(/\bETCH[-\s]?\d{2}\b/gi)||[]).map(x=>x.toUpperCase().replace(/\s/g,'').replace(/^ETCH(\d)/,'ETCH-$1')))];
   if(mentioned.length!==1||mentioned[0]!==equipmentId)return reject('Include exactly the selected equipment ID. The demo does not infer equipment identity.');
   const observation=note.match(/\b(?:i|we)\s+(?:observed|noticed)\s+([^.!?\n]{8,450})[.!?]/i);
-  const action=note.match(/\b(?:i|we)\s+((?:reviewed|checked|inspected|recorded|captured|logged)\s+[^.!?\n]{8,450})[.!?]/i);
+  const action=note.match(/\b((?:i|we)\s+(?:reviewed|checked|inspected|recorded|captured|logged)\s+[^.!?\n]{8,450})[.!?]/i);
   const next=note.match(/\bnext shift\s*:\s*([^.!?\n]{8,450})[.!?]?/i);
   const person=note.match(/\brecorded by\s*:\s*([a-z][a-z' -]{1,60})(?:[.!?\n]|$)/i);
   const shift=note.match(/\b(day|night)\s+shift\b/i);
@@ -119,7 +119,7 @@ export function parseShiftNote(raw,equipmentId){
   if(!observation||!action||!next||!person||!shift||!state||conflicting)return reject('This note is outside the supported demo pattern or contains conflicting status. Use the sample narrative or fill the review fields manually; no facts were inferred.');
   return {supported:true,message:'Explicit details extracted by fixed local rules. Review every field before confirmation.',draft:{
     equipmentId,issueId:'',author:person[1].trim(),shift:shift[1].toLowerCase()==='day'?'Day':'Night',
-    symptom:observation[1].trim(),action:`We ${action[1].trim()}`,status:state[1].toUpperCase(),
+    symptom:observation[1].trim(),action:action[1].trim(),status:state[1].toUpperCase(),
     nextAction:next[1].trim(),verification:'',rawNote:note
   }};
 }
