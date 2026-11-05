@@ -279,3 +279,12 @@ test('existing v0.1 browser records remain loadable',()=>{
   assert.equal(recovered.records.length,1);
   assert.equal(recovered.warning,'');
 });
+
+test('lowercase UUID-style local issue IDs remain searchable and source-cited',()=>{
+  const source=confirmRecord(reviewRecord(valid,data),true,data,'LOCAL-1a2b3c4d-abc1');
+  const result=answerQuestion(data,[source],'ETCH-01',`What is the status of ${source.issueId}?`);
+  assert.equal(result.supported,true);
+  assert.equal(result.items.length,1);
+  assert.match(result.items[0].text,/ISS-LOCAL-1a2b3c4d-abc1/);
+  assert.deepEqual(result.items[0].sourceIds,[source.id]);
+});
