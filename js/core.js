@@ -3,7 +3,11 @@ export const STATUSES = ['OPEN', 'MONITORING', 'RESOLVED'];
 const fields = ['equipmentId','issueId','timestamp','author','shift','symptom','action','status','nextAction','verification'];
 const clean = input => Object.fromEntries(fields.map(key => [key, typeof input?.[key] === 'string' ? input[key].trim() : '']));
 const known = (data, id) => data.equipment.some(e => e.id === id);
-const validTime = value => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z?$/.test(value) && Number.isFinite(Date.parse(value.endsWith('Z') ? value : `${value}Z`));
+const validTime = value => {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z?$/.test(value)) return false;
+  const time=Date.parse(value.endsWith('Z') ? value : `${value}Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0,16)===value.slice(0,16);
+};
 const utc = value => new Date(value.endsWith('Z') ? value : `${value}Z`).toISOString();
 
 export function validateRecord(input, data) {
@@ -18,6 +22,7 @@ export function validateRecord(input, data) {
   if (!STATUSES.includes(r.status)) error('status','Select a valid issue status.');
   if (r.status !== 'RESOLVED' && !r.nextAction) error('nextAction','An unresolved issue needs a next action.');
   if (r.status === 'RESOLVED' && r.verification.length < 12) error('verification','RESOLVED requires specific verification evidence (at least 12 characters).');
+  if (r.status === 'RESOLVED' && /\b(?:unverified|unresolved|pending|unknown|not yet|not verified|not checked|not completed|no (?:repair |post[- ]repair )?(?:verification|evidence)|remains open)\b/i.test(r.verification)) error('verification','The verification still describes missing evidence or an open issue. Keep the issue unresolved or record fresh verification.');
   if (r.issueId && !data.records.some(x => x.issueId === r.issueId && x.equipmentId === r.equipmentId)) error('issueId','This issue does not belong to the selected equipment.');
   for (const key of fields) if (r[key].length > (['symptom','action','nextAction','verification'].includes(key) ? 1500 : 100)) error(key,'This field is too long.');
   return errors;
@@ -93,7 +98,10 @@ export function answerQuestion(data, local, equipmentId, question) {
   const mentioned=q.match(/etch[\s-]*\d+/g)||[];
   if (mentioned.some(id=>id.replace(/\s+/g,'').replace(/^etch-?/,'ETCH-')!==equipmentId)) return abstain(`This answer is scoped to ${equipmentId}. Select the other equipment to inspect its evidence.`);
   if (/bypass|override|disable|setpoint|recipe|restart|start production|safe to|can i|may i|should i|yield|forecast|cost|temperature|pressure|how many|how long|why|root cause|compare/.test(q)) return abstain('The available sources do not establish that answer. This demo cannot infer causes, give operating parameters or authorize equipment operation.');
-  const issues=issuesFor(data,local,equipmentId);
+  let issues=issuesFor(data,local,equipmentId);
+  const requestedIssues=(q.match(/\biss-[a-z0-9-]+/g)||[]).map(id=>id.toUpperCase());
+  if (requestedIssues.some(id=>!issues.some(i=>i.issueId===id))) return abstain(`That issue has no confirmed evidence in the ${equipmentId} workspace. Check its ID and equipment scope.`);
+  if (requestedIssues.length) issues=issues.filter(i=>requestedIssues.includes(i.issueId));
   const statusQuestion=/status|open|unresolved|fixed|repair|resolved|handover|follow.?up|brief|issues/.test(q);
   const sopQuestion=/sop|procedure|checklist|check|pumpdown|vacuum|reflected|\brf\b|cooling|closure/.test(q);
   const items=[];
@@ -103,10 +111,13 @@ export function answerQuestion(data, local, equipmentId, question) {
     if (/reflected|\brf\b/.test(q)) topics.push('rf');
     if (/cooling/.test(q)) topics.push('cooling');
     if (/closure|close|verification/.test(q)) topics.push('closure');
+    const generalSopRequest=/^(?:(?:show|list)(?: the)?(?: available)? (?:sops?|procedures?)|what (?:sops?|procedures?) (?:are available|are in scope))\??$/.test(q);
+    if (!topics.length && !generalSopRequest) return abstain(`No matching SOP topic is available for ${equipmentId}. Use one of the listed SOP topics.`);
     const sops=data.sops.filter(s=>s.equipmentId===equipmentId && (!topics.length||topics.includes(s.topic)));
     if (!sops.length) return abstain(`No matching SOP section is available for ${equipmentId}.`);
     for (const s of sops) items.push({text:`${s.document} ${s.section}: ${s.text}`,sourceIds:[s.id]});
   } else if (statusQuestion) {
+    if (/\bopen\b|\bunresolved\b|follow.?up/.test(q) && !/\bresolved\b|\bclosed\b/.test(q)) issues=issues.filter(i=>i.status!=='RESOLVED');
     for (const i of issues) items.push({text:`${i.issueId} — ${i.status}. ${i.observation} ${i.status==='RESOLVED' ? `Recorded verification: ${i.verification}` : `Next action: ${i.nextAction} No verified repair is established for this issue.`}`,sourceIds:[i.sourceId]});
   } else if (/recent|latest|last|history|maintenance|action|work|happen/.test(q)) {
     for (const r of recordsFor(data,local,equipmentId).slice(0,3)) items.push({text:`${r.id} · ${r.status}: ${r.action}`,sourceIds:[r.id]});

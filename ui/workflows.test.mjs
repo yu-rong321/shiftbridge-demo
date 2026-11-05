@@ -71,3 +71,6 @@ test('sample loading works after all seed issues have been resolved',async()=>{
  const r=core.confirmRecord(core.reviewRecord({equipmentId:'ETCH-01',issueId:'ISS-101',timestamp:'2026-11-05T14:00',author:'Jamie',shift:'Day',symptom:'Synthetic recheck',action:'Completed fictional verification',status:'RESOLVED',nextAction:'',verification:'Verified fictional trend by Jamie'},seed),true,seed,'LOCAL-CLOSED');
  const c=await open({storage:JSON.stringify([r])});try{await go(c,'record');click(c,'[data-action="sample"]');assert.match(c.d.querySelector('#symptom').value,/synthetic|Synthetic/);}finally{c.close();}
 });
+test('changing to RESOLVED clears old verification and requires fresh evidence',async()=>{
+ const c=await open();try{await sample(c);input(c,'status','RESOLVED');assert.equal(c.d.querySelector('#verification').value,'');submit(c,'record-form');assert.equal(c.d.querySelector('#verification').getAttribute('aria-invalid'),'true');assert.equal(c.w.localStorage.getItem(key),null);}finally{c.close();}
+});

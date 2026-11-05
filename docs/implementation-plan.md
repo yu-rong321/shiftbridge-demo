@@ -8,9 +8,9 @@ Spec: docs/design.md. Execution is authorized by the user's development request.
 
 ## Tasks
 
-- [ ] 1. Evidence model. Write tests for equipment boundaries, draft exclusion, current issue state, confirmation, validation and sourced Q&A. Observe failure, implement js/core.js and data/demo.json, run npm test.
-- [ ] 2. Workspace. Implement index.html, css/styles.css, js/app.js and icon.svg. Verify record review invalidation, simulated save/reload, history, handover, Q&A, source drawer, keyboard and narrow screens.
-- [ ] 3. Delivery. Add build/check/serve scripts, README and Pages workflow. Run tests/check/build, review delivered files, publish through GitHub connector, inspect Actions and verify the public URL.
+- [x] 1. Evidence model. Core evidence rules implemented; 25 local contract tests pass after review corrections.
+- [x] 2. Workspace. Five English workflows implemented. 12 DOM workflows passed on GitHub Actions before the final verification-reset regression was added. Keyboard focus and mobile CSS are implemented; real-browser visual inspection is unavailable in this host.
+- [ ] 3. Delivery. Source and workflow committed. Static check/build pass. Deployment attempted and blocked by Pages not being enabled; final CI rerun and public URL verification tracked in docs/verification.md.
 
 ## Review focus
 

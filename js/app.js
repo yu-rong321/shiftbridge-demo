@@ -109,6 +109,7 @@ document.addEventListener('change',event=>{
  if(event.target.id==='acknowledge')$('[data-action="save-record"]').disabled=!event.target.checked;
  if(event.target.id==='status-filter'){historyStatus=event.target.value;render();$('#status-filter').focus();}
  if(event.target.closest('#record-form')){readForm();review=null;if(event.target.id==='status'){
+   if(draft.status==='RESOLVED'){draft.verification='';$('#verification').value='';toast('RESOLVED requires fresh verification. Previous verification text was cleared.');}
    $('#verification').required=draft.status==='RESOLVED';$('#nextAction').required=draft.status!=='RESOLVED';
    for(const key of ['verification','nextAction']){const label=document.querySelector(`label[for="${key}"]`);label.innerHTML=(key==='verification'?'Verification evidence':'Next action / owner')+(document.getElementById(key).required?' <span class="required">*</span>':'');}
  }}

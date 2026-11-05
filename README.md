@@ -33,7 +33,7 @@ npm run serve
 Open http://127.0.0.1:4173. Use HTTP(S); opening the HTML as a filesystem URL cannot fetch JSON modules reliably.
 
 ```sh
-npm test            # 21 core evidence-contract tests
+npm test            # core evidence-contract tests
 npm install        # optional local DOM test dependency
 npm run test:ui     # jsdom workflow integration tests, no real-browser layout test
 npm run check      # syntax and static asset checks

@@ -100,3 +100,19 @@ test('seed issue IDs never overlap across equipment and all records validate',()
     issueEquipment.set(record.issueId,record.equipmentId);
   }
 });
+test('unrelated SOP topics abstain instead of returning generic evidence',()=>{
+  assert.equal(answerQuestion(data,[],'ETCH-01','What does the SOP say about gas leaks?').supported,false);
+});
+test('unknown issue IDs abstain and known issue queries stay focused',()=>{
+  assert.equal(answerQuestion(data,[],'ETCH-01','What is the status of ISS-999?').supported,false);
+  const answer=answerQuestion(data,[],'ETCH-01','What is the status of ISS-101?');
+  assert.equal(answer.items.length,1);
+  assert.match(answer.items[0].text,/ISS-101/);
+});
+test('negative verification cannot turn an OPEN issue into verified completion',()=>{
+  const errors=validateRecord({...valid,status:'RESOLVED',issueId:'ISS-101',verification:'No repair verification; issue remains open.'},data);
+  assert.ok(errors.some(x=>x.field==='verification'));
+});
+test('impossible calendar dates are rejected',()=>{
+  assert.ok(validateRecord({...valid,timestamp:'2026-02-30T12:00'},data).some(x=>x.field==='timestamp'));
+});
