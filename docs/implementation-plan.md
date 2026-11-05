@@ -8,9 +8,9 @@ Spec: docs/design.md. Execution is authorized by the user's development request.
 
 ## Tasks
 
-- [x] 1. Evidence model. Core evidence rules implemented; 25 local contract tests pass after review corrections.
-- [x] 2. Workspace. Five English workflows implemented. 12 DOM workflows passed on GitHub Actions before the final verification-reset regression was added. Keyboard focus and mobile CSS are implemented; real-browser visual inspection is unavailable in this host.
-- [ ] 3. Delivery. Source and workflow committed. Static check/build pass. Deployment attempted and blocked by Pages not being enabled; final CI rerun and public URL verification tracked in docs/verification.md.
+- [x] 1. Evidence model. Core evidence rules implemented; 27 contract tests pass after review corrections.
+- [x] 2. Workspace. Five English workflows implemented. 13 DOM workflows pass on GitHub Actions. Keyboard focus and mobile CSS are implemented; real-browser visual inspection remains unverified.
+- [ ] 3. Delivery. Source and workflow committed. Final validation passes 40 tests, static checks, build and artifact upload. Deployment is blocked by Pages not being enabled. Public URL verification remains incomplete. See docs/verification.md.
 
 ## Review focus
 

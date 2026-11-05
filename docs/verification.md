@@ -23,6 +23,12 @@ The first workflow uncovered a sample-loader edge case and an ES-module/global-b
 
 ## Deployment status
 
+Final source commit: `61abc47b9bdc2d5999cb3e3cbba25e9864fbbab5`.
+
+Final GitHub Actions run: [42028333015](https://github.com/yu-rong321/shiftbridge-demo/actions/runs/42028333015). Validation job 127248074082 passed **27 core tests + 13 DOM workflow tests = 40 tests, zero failures**, followed by syntax/static checks, static packaging and Pages artifact upload. Deployment job 127248202999 failed at the Pages configuration step; publication and public asset verification did not run. The independent review findings and their targeted follow-up findings were corrected with regression tests.
+
+A local preview server was started for HTTP checks, but the sandbox denied loopback connections with Windows error 10013. The owned preview process was stopped. No successful local-browser or visual rendering claim is made.
+
 GitHub Actions run 42027304753 passed validation and packaging, then failed at actions/configure-pages@v5. Reported condition: “Get Pages site failed. Please verify that the repository has Pages enabled and configured to build using GitHub Actions”, followed by HTTP Not Found.
 
 The connected GitHub tools can publish commits and inspect Actions but expose no Pages administration operation. Local GitHub CLI is unauthenticated. Browser control stopped because it could not reliably determine the Windows browser URL. The ordinary GitHub Actions token cannot enable a new Pages site. This is a deployment block, not a deployment PASS.
