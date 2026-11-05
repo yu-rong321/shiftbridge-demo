@@ -124,7 +124,7 @@ document.addEventListener('click',event=>{
  const action=event.target.closest('[data-action]')?.dataset.action;
  if(action==='close-source')$('#source-dialog').close();
  if(action==='sample'){
-   const latest=openIssues(equipmentId)[0];draft={...defaultDraft(),issueId:latest.issueId,author:'Jamie Park',symptom:equipmentId==='ETCH-01'?'Pumpdown drift remains visible in the synthetic trend.':'The reflected RF event remains under review.',action:'Reviewed the previous shift record and preserved the new observation. No repair was performed.',nextAction:'Next shift: review recurrence with the equipment owner and retain the source record.',verification:'No repair verification; issue remains open.'};review=null;render();toast('Sample loaded as an unconfirmed draft. Review before saving.');
+   const latest=openIssues(equipmentId).find(i=>data.records.some(r=>r.issueId===i.issueId));draft={...defaultDraft(),issueId:latest?.issueId||'',author:'Jamie Park',symptom:latest?(equipmentId==='ETCH-01'?'Pumpdown drift remains visible in the synthetic trend.':'The reflected RF event remains under review.'):'New synthetic observation recorded for review.',action:'Reviewed the previous shift record and preserved the new observation. No repair was performed.',nextAction:'Next shift: review recurrence with the equipment owner and retain the source record.',verification:'No repair verification; issue remains open.'};review=null;render();toast('Sample loaded as an unconfirmed draft. Review before saving.');
  }
  if(action==='edit-record'){review=null;render(true);}
  if(action==='new-record'){lastSaved=null;review=null;draft=defaultDraft();render(true);}

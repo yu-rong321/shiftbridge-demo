@@ -20,8 +20,10 @@ async function open({storage=null,failStorage=false,dataset=seed}={}){
  if(storage)w.localStorage.setItem(key,storage);
  if(failStorage)w.Storage.prototype.setItem=function(){throw new Error('Quota exceeded');};
  const code=app.replace(/^import[^\n]+\n/,'const {STATUSES,validateRecord,reviewRecord,confirmRecord,recordsFor,issuesFor,handover,answerQuestion,resolveSource,restoreRecords}=window.__core;\n').replaceAll('import.meta.url',JSON.stringify('https://example.test/shiftbridge-demo/js/app.js'));
- w.eval(code);await tick();
- return {dom,w,d:w.document,close:()=>dom.window.close()};
+ const errors=[];w.addEventListener('error',event=>errors.push(String(event.error)));
+ // A closure mirrors ES-module bindings; window.history must not replace history().
+ w.eval(`(function(){'use strict';\n${code}\n})();`);await tick();
+ return {dom,w,d:w.document,close:()=>{dom.window.close();assert.deepEqual(errors,[],'No uncaught DOM event errors');}};
 }
 async function go(ctx,hash){ctx.w.location.hash=hash;await tick();}
 function input(ctx,id,value){const el=ctx.d.getElementById(id);el.value=value;el.dispatchEvent(new ctx.w.Event(el.tagName==='SELECT'?'change':'input',{bubbles:true}));}
