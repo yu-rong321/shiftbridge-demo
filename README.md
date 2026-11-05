@@ -1,4 +1,4 @@
-# ShiftBridge Interactive Demo v0.2 (SOP Version Control)
+# ShiftBridge Interactive Demo v0.3 — Knowledge Continuity Walkthrough
 
 **AI Maintenance Knowledge & Handover** — an English interactive concept demo for the fictional Aster Semiconductor · Fab 01.
 
@@ -7,10 +7,20 @@ Intended GitHub Pages URL: https://yu-rong321.github.io/shiftbridge-demo/
 ## Try the five workflows
 
 1. **Facility Overview** — inspect ETCH-01 and ETCH-02 and select an equipment workspace.
-2. **Record My Shift** — load a sample or enter an observation, check fields, review the snapshot, then explicitly confirm and simulate save.
+2. **Record My Shift** — enter a narrative using a documented, limited pattern; generate a deterministic structured draft (never real AI), edit fields, and explicitly confirm before simulated local save. Manual entry remains available.
 3. **Maintenance History** — inspect only the active equipment's confirmed records. Filter by status or search. Open a source to view its exact content.
 4. **Brief Next Shift** — review unresolved follow-ups separately from verified completed work, with source links on every entry.
-5. **Equipment Knowledge Q&A** — ask about open issues, recent work or the listed SOP topics. Unsupported or cross-equipment questions abstain.
+5. **Equipment Knowledge Q&A** — ask about open issues, recent work or listed version-aware SOP topics. Every supported answer cites synthetic evidence.
+
+The Facility Overview also includes **Start guided demo**, a five-step visitor flow: explore ETCH-01 → inspect example narrative → review and confirm → inspect handover → ask with citations. The guide never resets previous confirmed browser data and can be exited at any time. Unsupported or cross-equipment questions abstain.
+
+## Natural-language demonstration and cross-shift continuity (v0.3)
+
+`data/demo.json.guidedDemoNote` supplies one original fictional ETCH-01 technician narrative. The on-device JavaScript extractor (`parseShiftNote`) uses strict, transparent rules and copies only **explicit** observation, action, author, shift, equipment, OPEN/MONITORING status and next-action text. It refuses unknown/conflicting/cross-equipment notes and does not invent facts, diagnose equipment, infer a root cause, call an AI model or bypass human review. Other text can be entered as manual structured fields.
+
+Once a new browser-local issue is confirmed, its `ISS-LOCAL-*` ID becomes selectable on later shifts for the **same equipment**. A follow-up maintains that ID but has its own `LOCAL-*` record and confirmation. Rehydration checks prior confirmed records in order; unconfirmed, forged, missing-parent, cross-equipment and out-of-order dependent references are excluded. Handover uses the latest confirmed observation **per issue**, leaving historic source entries intact. Existing v0.1 locally saved records are still supported; the existing localStorage key is intentionally unchanged.
+
+This is an append-only demonstration inside one browser, **not** authenticated multi-user issue tracking or shared NAS persistence.
 
 ## SOP version control (v0.2)
 
@@ -54,10 +64,10 @@ Hash routes and relative asset URLs support the `/shiftbridge-demo/` project sub
 
 ## Source layout
 
-- `data/demo.json`: six seed records, two equipment entries and four current source SOP sections and two archived revisions.
+- `data/demo.json`: six seed records, two equipment entries, four current SOP sections, two archived revisions and a guided synthetic shift note.
 - `js/core.js`: pure validation, confirmation, equipment scoping, issue state, handover and Q&A.
 - `js/app.js`: English DOM interface and browser-local simulated storage.
 - `tests/`: domain acceptance tests. `ui/`: DOM workflow integration tests.
 - `docs/`: design, implementation progress and verification notes.
 
-No external fonts, images, scripts, analytics or runtime services are requested by the site. The equipment illustrations and bridge icon are original SVGs. This version is suitable for demonstrating the product concept, not real factory deployment.
+No external fonts, images, scripts, analytics or runtime services are requested by the site. `npm test` and jsdom `npm run test:ui` check the narrative parser, linked issue continuity, guided path, safety refusal and prior v0.2 behavior. The equipment illustrations and bridge icon are original SVGs. This version is suitable for demonstrating the product concept, not real factory deployment.
