@@ -123,7 +123,7 @@ function inspectSource(id){
  $('#source-content').innerHTML=`<h2 id="source-title" class="source-heading">${escape(s.id)}</h2><div class="source-badges"><span class="badge">${escape(s.equipmentId)}</span><span class="badge confirmed">${isSop?'FICTIONAL SOP':'HUMAN-CONFIRMED DEMO'}</span>${!isSop?badge(s.status):''}</div><dl class="detail-list">${isSop?detail('Document / section',s.document+' '+s.section)+detail('Revision',s.revision)+detail('Version status',sopVersionState(s,data)+' (scenario '+data.scenarioDate+')')+detail('Approval state',s.approvalStatus)+detail('Effective date',s.effectiveDate)+detail('Retired date',s.retiredDate)+detail('Supersedes',s.supersedesId)+detail('Superseded by',s.supersededById)+detail('Title',s.title)+detail('Source text',s.text):detail('Related issue',s.issueId)+detail('Observation time',date(s.timestamp))+detail('Recorded by / shift',s.author+' / '+s.shift)+detail('Observation',s.symptom)+detail('Action taken',s.action)+detail('Status at entry',s.status)+detail('Next action',s.nextAction)+detail('Verification evidence',s.verification)+(s.rawNote?detail('Original raw note',s.rawNote):'')+detail('Confirmed by',s.confirmedBy)+detail('Confirmation time',date(s.confirmedAt))}</dl><div class="source-note">${isSop?'Synthetic reference only. SUPERSEDED, EXPIRED or WITHDRAWN versions are archival and must not be treated as current maintenance guidance. No actual operation is authorized.':'Synthetic source record. Confirmation is simulated and does not authenticate the named reviewer.'}</div>`;
  $('#source-dialog').showModal();
 }
-function ask(q){question=q.trim();$('#question').value=question;answer=answerQuestion(data,local,equipmentId,question);$('#answer-result').innerHTML=answerHTML();}
+function ask(q){question=q.trim();$('#question').value=question;answer=answerQuestion(data,local,equipmentId,question);if(guidedStep===4)render();else $('#answer-result').innerHTML=answerHTML();}
 
 document.addEventListener('input',event=>{
  if(event.target.id==='raw-note'){rawNote=event.target.value;noteMessage='Note updated. Re-run the extractor or check the structured fields manually.';const status=$('#note-message');if(status)status.textContent=noteMessage;}
@@ -153,6 +153,38 @@ document.addEventListener('click',event=>{
  const scoped=event.target.closest('[data-equipment]');if(scoped){switchEquipment(scoped.dataset.equipment,scoped.dataset.target);return;}
  const example=event.target.closest('[data-question]');if(example){ask(example.dataset.question);return;}
  const action=event.target.closest('[data-action]')?.dataset.action;
+ if(action==='tour-start'){
+   // Starting the tour is non-destructive: prior browser-local records remain intact.
+   equipmentId='ETCH-01';guidedStep=0;rawNote='';noteMessage='';draft=null;review=null;lastSaved=null;answer=null;question='';
+   if(location.hash!=='#overview')location.hash='#overview';else render(true);
+ }
+ if(action==='tour-next'){
+   if(guidedStep===0){
+     guidedStep=1;rawNote=data.guidedDemoNote;noteMessage='';draft=defaultDraft();review=null;lastSaved=null;
+     if(location.hash!=='#record')location.hash='#record';else render(true);
+   }else if(guidedStep===3&&view==='record'){
+     if(location.hash!=='#brief')location.hash='#brief';else render(true);
+   }else if(guidedStep===3&&view==='brief'){
+     guidedStep=4;question='What issues are open on ETCH-01?';answer=null;
+     if(location.hash!=='#knowledge')location.hash='#knowledge';else render(true);
+   }
+ }
+ if(action==='tour-exit'){guidedStep=-1;render();toast('Guided demo closed. Your confirmed demo records are unchanged.');}
+ if(action==='tour-finish'){guidedStep=-1;render();toast('Guided demo complete. Review the cited evidence anytime.');}
+ if(action==='note-sample'){
+   rawNote=equipmentId==='ETCH-01'?data.guidedDemoNote:data.guidedDemoNote.replaceAll('ETCH-01',equipmentId).replace('chamber door indicator','wafer transfer sensor');
+   noteMessage='Synthetic example loaded. Generate the demo draft to extract its explicitly stated fields.';
+   render();
+ }
+ if(action==='generate-draft'){
+   const result=parseShiftNote(rawNote,equipmentId);
+   noteMessage=result.message;
+   if(result.supported){
+     draft={...defaultDraft(),...result.draft};review=null;lastSaved=null;
+     if(guidedStep===1)guidedStep=2;
+   }
+   render();
+ }
  if(action==='close-source')$('#source-dialog').close();
  if(action==='sample'){
    rawNote='';noteMessage='';
