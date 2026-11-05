@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { validateRecord, reviewRecord, confirmRecord, recordsFor, issuesFor, handover, answerQuestion, resolveSource, restoreRecords } from '../js/core.js';
+import { validateRecord, reviewRecord, confirmRecord, recordsFor, issuesFor, handover, answerQuestion, resolveSource, restoreRecords, sopVersionState, sopCatalog } from '../js/core.js';
 
 const data = JSON.parse(await readFile(new URL('../data/demo.json', import.meta.url)));
 const valid = {equipmentId:'ETCH-01', issueId:'', timestamp:'2026-11-05T14:00', author:'Alex Chen', shift:'Day', symptom:'Long pumpdown observed', action:'Reviewed trend and recorded observation', status:'OPEN', nextAction:'Recheck at next handover', verification:''};
@@ -123,4 +123,81 @@ test('maintenance answers for one issue exclude unrelated work',()=>{
 });
 test('valid verification can report absence of recurring symptoms',()=>{
   assert.deepEqual(validateRecord({...valid,status:'RESOLVED',verification:'Jamie verified the acceptance trend; no evidence of recurring pumpdown drift was observed.'},data),[]);
+});
+
+test('SOP archive has a dated, reciprocal successor relationship',()=>{
+  const old=data.sops.find(s=>s.id==='SOP-01-2-OLD'), current=data.sops.find(s=>s.id==='SOP-01-2');
+  assert.equal(sopVersionState(old,data),'SUPERSEDED');
+  assert.equal(sopVersionState(current,data),'ACTIVE');
+  assert.equal(old.supersededById,current.id);
+  assert.equal(current.supersedesId,old.id);
+  assert.equal(old.retiredDate,current.effectiveDate);
+});
+test('expired ETCH-02 SOP is not a current approved SOP',()=>{
+  const old=data.sops.find(s=>s.id==='SOP-02-2-OLD');
+  assert.equal(sopVersionState(old,data),'EXPIRED');
+  const result=sopCatalog(data,'ETCH-02','rf');
+  assert.equal(result.error,'');
+  assert.deepEqual(result.active.map(s=>s.id),['SOP-02-2']);
+  assert.deepEqual(result.archived.map(s=>s.id),['SOP-02-2-OLD']);
+});
+test('normal SOP answer never cites or quotes archived material',()=>{
+  const answer=answerQuestion(data,[],'ETCH-01','What does the SOP say about pumpdown?');
+  assert.equal(answer.supported,true);
+  assert.deepEqual(answer.items.flatMap(i=>i.sourceIds),['SOP-01-2']);
+  assert.doesNotMatch(answer.items[0].text,/SYN Rev 0\.9|archived handover wording/i);
+});
+test('question about old SOP cites old and successor without recommending old instructions',()=>{
+  const answer=answerQuestion(data,[],'ETCH-01','Should I follow the old SOP for the pumpdown issue?');
+  assert.equal(answer.supported,true);
+  assert.deepEqual(answer.items[0].sourceIds,['SOP-01-2-OLD','SOP-01-2']);
+  assert.match(answer.items[0].text,/SUPERSEDED/);
+  assert.match(answer.items[0].text,/Do not treat the archived revision as current guidance/);
+  assert.ok(!answer.items[0].text.includes('Archived fictional revision.'));
+});
+test('historical SOP query remains within the selected equipment',()=>{
+  const answer=answerQuestion(data,[],'ETCH-02','Is the old reflected RF SOP still valid?');
+  assert.equal(answer.supported,true);
+  assert.deepEqual(answer.items[0].sourceIds,['SOP-02-2-OLD','SOP-02-2']);
+  assert.equal(resolveSource(data,[],'SOP-01-2-OLD','ETCH-02'),null);
+});
+test('no approved current SOP means fail-closed abstention',()=>{
+  const d=structuredClone(data);
+  d.sops=d.sops.filter(s=>s.id!=='SOP-01-2');
+  const answer=answerQuestion(d,[],'ETCH-01','What does the SOP say about pumpdown?');
+  assert.equal(answer.supported,false);
+  assert.deepEqual(answer.items,[]);
+});
+test('overlapping active SOPs produce ambiguity, not a guessed choice',()=>{
+  const d=structuredClone(data);
+  d.sops.push({...d.sops.find(s=>s.id==='SOP-01-2'),id:'SOP-01-2-DUP',supersedesId:null});
+  const answer=answerQuestion(d,[],'ETCH-01','What is the current SOP version for pumpdown?');
+  assert.equal(answer.supported,false);
+  assert.match(answer.message,/ambiguous/i);
+});
+test('invalid effective date, unsupported approval and future version are rejected',()=>{
+  for(const change of [{effectiveDate:'2026-02-30'},{approvalStatus:'DRAFT'},{effectiveDate:'2027-01-01'}]){
+    const d=structuredClone(data);
+    Object.assign(d.sops.find(s=>s.id==='SOP-01-3'),change);
+    assert.equal(answerQuestion(d,[],'ETCH-01','What does the SOP say about closure?').supported,false);
+  }
+});
+test('broken or cross-equipment supersession chains do not answer',()=>{
+  for(const supersededById of ['SOP-NOT-FOUND','SOP-02-2']){
+    const d=structuredClone(data);
+    d.sops.find(s=>s.id==='SOP-01-2-OLD').supersededById=supersededById;
+    assert.equal(answerQuestion(d,[],'ETCH-01','What does the SOP say about pumpdown?').supported,false);
+  }
+});
+test('even historical framing cannot bypass safety-denied operating questions',()=>{
+  assert.equal(answerQuestion(data,[],'ETCH-01','Should I bypass the interlock according to the old SOP?').supported,false);
+});
+test('all SOP metadata and chains validate independently for each topic',()=>{
+  for(const eq of data.equipment){
+    for(const topic of new Set(data.sops.filter(s=>s.equipmentId===eq.id).map(s=>s.topic))){
+      const result=sopCatalog(data,eq.id,topic);
+      assert.equal(result.error,'',eq.id+' '+topic+': '+result.error);
+      assert.equal(result.active.length,1);
+    }
+  }
 });

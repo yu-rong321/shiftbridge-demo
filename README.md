@@ -1,4 +1,4 @@
-# ShiftBridge Interactive Demo v0.1
+# ShiftBridge Interactive Demo v0.2 (SOP Version Control)
 
 **AI Maintenance Knowledge & Handover** — an English interactive concept demo for the fictional Aster Semiconductor · Fab 01.
 
@@ -12,9 +12,15 @@ Intended GitHub Pages URL: https://yu-rong321.github.io/shiftbridge-demo/
 4. **Brief Next Shift** — review unresolved follow-ups separately from verified completed work, with source links on every entry.
 5. **Equipment Knowledge Q&A** — ask about open issues, recent work or the listed SOP topics. Unsupported or cross-equipment questions abstain.
 
+## SOP version control (v0.2)
+
+The fictional dataset evaluates SOP approval and validity against its fixed `scenarioDate` (2026-11-05), **not the viewer's system clock**. Each SOP revision has `versionStatus`, `approvalStatus`, `effectiveDate`, `retiredDate`, `supersedesId`, and `supersededById` metadata. `ACTIVE` is an approval label only within this fictional scenario, not real facility authorization. `SUPERSEDED` and `EXPIRED` revisions remain available for historical source inspection but are excluded from current-procedure answers.
+
+Normal SOP Q&A selects exactly one effective approved revision per equipment/topic and cites only that revision. Historical-version questions cite the archived source **and** the current successor, reporting their statuses and dates without quoting old operating instructions or authorizing use. Missing current revisions, conflicting active revisions, broken successor links, invalid approval or date metadata, and cross-equipment replacements fail closed. A historical question about an unsupported topic is explicitly unanswered. Details: [`docs/sop-version-control-v0.2.md`](docs/sop-version-control-v0.2.md).
+
 ## Boundaries
 
-All organizations, equipment, people, SOPs, observations and verifications are synthetic. Q&A uses deterministic topic rules, not an AI model. No NAS, UGREEN runtime or AI API is connected. No operational instructions or release authority are implied. Real UGREEN submission Skill ZIPs and proposal PDFs are not included or modified.
+All organizations, equipment, people, SOPs, observations and verifications are synthetic. Q&A uses deterministic evidence and SOP-version rules, not an AI model. No NAS, UGREEN runtime or AI API is connected. No operational instructions or release authority are implied. Real UGREEN submission Skill ZIPs and proposal PDFs are not included or modified.
 
 Confirmed demo records are stored only in this browser's localStorage under `shiftbridge.demo.v01.records`. They survive reloads in the same browser/origin but are not shared between users or devices. Confirmation is an interaction demonstration, not authenticated approval. Local browser state is editable by its owner and is not a trusted audit store. Drafts remain in memory and are discarded when equipment changes or the page reloads.
 
@@ -48,7 +54,7 @@ Hash routes and relative asset URLs support the `/shiftbridge-demo/` project sub
 
 ## Source layout
 
-- `data/demo.json`: six seed records, two equipment entries and four source SOP sections.
+- `data/demo.json`: six seed records, two equipment entries and four current source SOP sections and two archived revisions.
 - `js/core.js`: pure validation, confirmation, equipment scoping, issue state, handover and Q&A.
 - `js/app.js`: English DOM interface and browser-local simulated storage.
 - `tests/`: domain acceptance tests. `ui/`: DOM workflow integration tests.

@@ -19,7 +19,7 @@ async function open({storage=null,failStorage=false,dataset=seed}={}){
  w.HTMLDialogElement.prototype.close=function(){this.open=false;};
  if(storage)w.localStorage.setItem(key,storage);
  if(failStorage)w.Storage.prototype.setItem=function(){throw new Error('Quota exceeded');};
- const code=app.replace(/^import[^\n]+\n/,'const {STATUSES,validateRecord,reviewRecord,confirmRecord,recordsFor,issuesFor,handover,answerQuestion,resolveSource,restoreRecords}=window.__core;\n').replaceAll('import.meta.url',JSON.stringify('https://example.test/shiftbridge-demo/js/app.js'));
+ const code=app.replace(/^import[^\n]+\n/,'const {STATUSES,validateRecord,reviewRecord,confirmRecord,recordsFor,issuesFor,handover,answerQuestion,resolveSource,restoreRecords,sopVersionState,sopCatalog}=window.__core;\n').replaceAll('import.meta.url',JSON.stringify('https://example.test/shiftbridge-demo/js/app.js'));
  const errors=[];w.addEventListener('error',event=>errors.push(String(event.error)));
  // A closure mirrors ES-module bindings; window.history must not replace history().
  w.eval(`(function(){'use strict';\n${code}\n})();`);await tick();
@@ -73,4 +73,49 @@ test('sample loading works after all seed issues have been resolved',async()=>{
 });
 test('changing to RESOLVED clears old verification and requires fresh evidence',async()=>{
  const c=await open();try{await sample(c);input(c,'status','RESOLVED');assert.equal(c.d.querySelector('#verification').value,'');submit(c,'record-form');assert.equal(c.d.querySelector('#verification').getAttribute('aria-invalid'),'true');assert.equal(c.w.localStorage.getItem(key),null);}finally{c.close();}
+});
+
+test('SOP catalog distinguishes approved current and archived revisions',async()=>{
+  const c=await open();try{
+    await go(c,'knowledge');
+    const content=c.d.querySelector('main').textContent;
+    assert.match(content,/Current SOP references/);
+    assert.match(content,/Historical SOP archive/);
+    assert.match(content,/ARCHIVED — NOT CURRENT/);
+    assert.match(content,/SOP-01-2-OLD/);
+    click(c,'[data-source="SOP-01-2-OLD"]');
+    assert.match(c.d.querySelector('#source-content').textContent,/SUPERSEDED/);
+    assert.match(c.d.querySelector('#source-content').textContent,/2026-10-15/);
+    assert.match(c.d.querySelector('#source-content').textContent,/SOP-01-2/);
+  }finally{c.close();}
+});
+test('old SOP question includes archived source and active successor',async()=>{
+  const c=await open();try{
+    await go(c,'knowledge');
+    input(c,'question','Should I follow the old SOP for the pumpdown issue?');
+    submit(c,'question-form');
+    const ids=[...c.d.querySelectorAll('#answer-result [data-source]')].map(e=>e.dataset.source);
+    assert.deepEqual(ids,['SOP-01-2-OLD','SOP-01-2']);
+    assert.match(c.d.querySelector('#answer-result').textContent,/Do not treat the archived revision as current/);
+  }finally{c.close();}
+});
+test('expired ETCH-02 SOP is archival and not shown as current',async()=>{
+  const c=await open();try{
+    input(c,'equipment-select','ETCH-02');
+    await go(c,'knowledge');
+    assert.match(c.d.querySelector('main').textContent,/SOP-02-2-OLD/);
+    click(c,'[data-question="Is the old reflected RF SOP still valid?"]');
+    assert.match(c.d.querySelector('#answer-result').textContent,/EXPIRED/);
+    assert.deepEqual([...c.d.querySelectorAll('#answer-result [data-source]')].map(e=>e.dataset.source),['SOP-02-2-OLD','SOP-02-2']);
+  }finally{c.close();}
+});
+test('SOP version conflict in demo data abstains in the browser UI',async()=>{
+  const d=structuredClone(seed);
+  d.sops.push({...d.sops.find(s=>s.id==='SOP-01-2'),id:'SOP-01-2-OVERLAP',supersedesId:null});
+  const c=await open({dataset:d});try{
+    await go(c,'knowledge');
+    click(c,'[data-question="What does the SOP say about pumpdown?"]');
+    assert.match(c.d.querySelector('#answer-result').textContent,/No supported answer/);
+    assert.match(c.d.querySelector('main').textContent,/SOP validity conflict/);
+  }finally{c.close();}
 });
