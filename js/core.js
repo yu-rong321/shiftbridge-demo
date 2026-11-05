@@ -22,7 +22,8 @@ export function validateRecord(input, data) {
   if (!STATUSES.includes(r.status)) error('status','Select a valid issue status.');
   if (r.status !== 'RESOLVED' && !r.nextAction) error('nextAction','An unresolved issue needs a next action.');
   if (r.status === 'RESOLVED' && r.verification.length < 12) error('verification','RESOLVED requires specific verification evidence (at least 12 characters).');
-  if (r.status === 'RESOLVED' && /\b(?:unverified|unresolved|pending|unknown|not yet|not verified|not checked|not completed|no (?:repair |post[- ]repair )?(?:verification|evidence)|remains open)\b/i.test(r.verification)) error('verification','The verification still describes missing evidence or an open issue. Keep the issue unresolved or record fresh verification.');
+  const missingVerification=/\b(?:unverified|unresolved|not verified|not checked|not completed|remains open)\b|\bverification(?: is| remains)? (?:pending|unknown|not yet)\b|\bno (?:repair |post[- ]repair )?verification\b|\bno (?:repair |post[- ]repair |verification )evidence\b|\bno evidence(?:\s*(?:[.;]|$)|\s+(?:exists|available|recorded|provided|yet|for (?:repair|verification)|to (?:verify|confirm)|of (?:a )?(?:repair|verification|completion)))/i;
+  if (r.status === 'RESOLVED' && missingVerification.test(r.verification)) error('verification','The verification still describes missing evidence or an open issue. Keep the issue unresolved or record fresh verification.');
   if (r.issueId && !data.records.some(x => x.issueId === r.issueId && x.equipmentId === r.equipmentId)) error('issueId','This issue does not belong to the selected equipment.');
   for (const key of fields) if (r[key].length > (['symptom','action','nextAction','verification'].includes(key) ? 1500 : 100)) error(key,'This field is too long.');
   return errors;
@@ -120,7 +121,8 @@ export function answerQuestion(data, local, equipmentId, question) {
     if (/\bopen\b|\bunresolved\b|follow.?up/.test(q) && !/\bresolved\b|\bclosed\b/.test(q)) issues=issues.filter(i=>i.status!=='RESOLVED');
     for (const i of issues) items.push({text:`${i.issueId} — ${i.status}. ${i.observation} ${i.status==='RESOLVED' ? `Recorded verification: ${i.verification}` : `Next action: ${i.nextAction} No verified repair is established for this issue.`}`,sourceIds:[i.sourceId]});
   } else if (/recent|latest|last|history|maintenance|action|work|happen/.test(q)) {
-    for (const r of recordsFor(data,local,equipmentId).slice(0,3)) items.push({text:`${r.id} · ${r.status}: ${r.action}`,sourceIds:[r.id]});
+    const matching=recordsFor(data,local,equipmentId).filter(r=>!requestedIssues.length||requestedIssues.includes(r.issueId));
+    for (const r of matching.slice(0,3)) items.push({text:`${r.id} · ${r.status}: Reported action: ${r.action}${r.status!=='RESOLVED'?' This record does not establish a verified repair.':''}`,sourceIds:[r.id]});
   } else return abstain('No supported answer was found in the available evidence. Try a question about open issues, recent work or a listed SOP topic.');
   if (!items.length) return abstain('No confirmed evidence is available for this equipment.');
   return {supported:true,message:`Source-based response · ${equipmentId} · deterministic demo`,items};

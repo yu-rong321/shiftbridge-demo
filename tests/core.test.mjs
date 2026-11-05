@@ -116,3 +116,11 @@ test('negative verification cannot turn an OPEN issue into verified completion',
 test('impossible calendar dates are rejected',()=>{
   assert.ok(validateRecord({...valid,timestamp:'2026-02-30T12:00'},data).some(x=>x.field==='timestamp'));
 });
+test('maintenance answers for one issue exclude unrelated work',()=>{
+  const answer=answerQuestion(data,[],'ETCH-01','What maintenance was done for ISS-101?');
+  assert.equal(answer.supported,true);
+  assert.ok(answer.items.every(i=>i.sourceIds.every(id=>data.records.find(r=>r.id===id).issueId==='ISS-101')));
+});
+test('valid verification can report absence of recurring symptoms',()=>{
+  assert.deepEqual(validateRecord({...valid,status:'RESOLVED',verification:'Jamie verified the acceptance trend; no evidence of recurring pumpdown drift was observed.'},data),[]);
+});
