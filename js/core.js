@@ -187,9 +187,9 @@ export function answerQuestion(data, local, equipmentId, question) {
   const historicalSopQuestion=/\b(old|older|previous|outdated|obsolete|superseded|expired|legacy|archived?|historical)\b|\brev(?:ision)?\s*0[.]9\b/.test(q) && /\bsop\b|procedure|revision/.test(q);
   if (/bypass|override|disable|setpoint|recipe|restart|start production|safe to|yield|forecast|cost|temperature|pressure|how many|how long|why|root cause|compare/.test(q) || (/(?:can|may|should) i\b/.test(q) && !historicalSopQuestion)) return abstain('The available sources do not establish that answer. This demo cannot infer causes, give operating parameters or authorize equipment operation.');
   let issues=issuesFor(data,local,equipmentId);
-  const requestedIssues=(q.match(/\biss-[a-z0-9-]+/g)||[]).map(id=>id.toUpperCase());
-  if (requestedIssues.some(id=>!issues.some(i=>i.issueId===id))) return abstain(`That issue has no confirmed evidence in the ${equipmentId} workspace. Check its ID and equipment scope.`);
-  if (requestedIssues.length) issues=issues.filter(i=>requestedIssues.includes(i.issueId));
+  const requestedIssues=(q.match(/\biss-[a-z0-9-]+/g)||[]).map(id=>id.toLowerCase());
+  if (requestedIssues.some(id=>!issues.some(i=>i.issueId.toLowerCase()===id))) return abstain(`That issue has no confirmed evidence in the ${equipmentId} workspace. Check its ID and equipment scope.`);
+  if (requestedIssues.length) issues=issues.filter(i=>requestedIssues.includes(i.issueId.toLowerCase()));
   const statusQuestion=/status|open|unresolved|fixed|repair|resolved|handover|follow.?up|brief|issues/.test(q);
   const sopQuestion=/sop|procedure|checklist|check|pumpdown|vacuum|reflected|\brf\b|cooling|closure/.test(q);
   const items=[];
@@ -222,7 +222,7 @@ export function answerQuestion(data, local, equipmentId, question) {
     if (/\bopen\b|\bunresolved\b|follow.?up/.test(q) && !/\bresolved\b|\bclosed\b/.test(q)) issues=issues.filter(i=>i.status!=='RESOLVED');
     for (const i of issues) items.push({text:`${i.issueId} — ${i.status}. ${i.observation} ${i.status==='RESOLVED' ? `Recorded verification: ${i.verification}` : `Next action: ${i.nextAction} No verified repair is established for this issue.`}`,sourceIds:[i.sourceId]});
   } else if (/recent|latest|last|history|maintenance|action|work|happen/.test(q)) {
-    const matching=recordsFor(data,local,equipmentId).filter(r=>!requestedIssues.length||requestedIssues.includes(r.issueId));
+    const matching=recordsFor(data,local,equipmentId).filter(r=>!requestedIssues.length||requestedIssues.includes(r.issueId.toLowerCase()));
     for (const r of matching.slice(0,3)) items.push({text:`${r.id} · ${r.status}: Reported action: ${r.action}${r.status!=='RESOLVED'?' This record does not establish a verified repair.':''}`,sourceIds:[r.id]});
   } else return abstain('No supported answer was found in the available evidence. Try a question about open issues, recent work or a listed SOP topic.');
   if (!items.length) return abstain('No confirmed evidence is available for this equipment.');
