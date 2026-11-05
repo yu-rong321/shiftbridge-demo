@@ -38,6 +38,14 @@ function guideBanner(){
    guidedStep===4&&view==='knowledge'&&answer?.supported?'<button type="button" class="button small" data-action="tour-finish">Finish guided demo ✓</button>':'';
  return `<section class="tour-bar" aria-label="Guided demonstration"><div class="tour-info"><span class="tour-step">GUIDED DEMO · STEP ${guidedStep+1}/5</span><h2>${escape(guideTitles[guidedStep])}</h2><p>${escape(descriptions[guidedStep])}</p></div><div class="tour-actions">${action}<button type="button" class="text-button" data-action="tour-exit">Exit guide</button></div></section>`;
 }
+function evidenceTrail(){
+  const featured=data.featuredCase;
+  if(!featured||featured.equipmentId!==equipmentId)return '';
+  const records=data.records.filter(r=>r.confirmed===true&&r.equipmentId===equipmentId&&r.issueId===featured.issueId)
+    .sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));
+  if(records.length!==3)return '';
+  return `<section class="story-panel" aria-label="Three-shift evidence trail"><div class="section-heading"><div><h2>Three-shift evidence trail</h2><p>${escape(featured.title)} · ${escape(featured.issueId)} · Each step links to its original record.</p></div><span class="badge confirmed">SYNTHETIC CASE</span></div><div class="story-grid">${records.map((r,index)=>`<article class="story-step"><span class="story-index">SHIFT ${index+1} OF 3</span><div class="story-state">${badge(r.status)}<span>${escape(r.shift)} · ${escape(date(r.timestamp))}</span></div><h3>${escape(r.author)}</h3><p>${escape(r.symptom)}</p><div class="story-evidence"><strong>${r.status==='RESOLVED'?'RECORDED VERIFICATION':'NEXT ACTION'}</strong><span>${escape(r.status==='RESOLVED'?r.verification:r.nextAction)}</span></div>${source(r.id)}</article>`).join('')}</div><p class="trace-note">OPEN → MONITORING → RESOLVED only after an explicit verification record. The scenario does not establish equipment release or an independently authenticated sign-off.</p></section>`;
+}
 function overview(){
  const total=data.equipment.reduce((n,e)=>n+recordCount(e.id),0),open=data.equipment.reduce((n,e)=>n+openIssues(e.id).length,0);
  const stats=[['Equipment in scope','2','Etch Bay A · Fab 01','grid',''],['Open follow-ups',String(open),'Unresolved · handover required','alert','amber'],['Confirmed records',String(total),'Synthetic seed + local demo','file','teal'],['Your demo records',String(local.length),'Saved in this browser only','check','']];
@@ -48,6 +56,7 @@ function overview(){
    const issues=openIssues(e.id),latest=recordsFor(data,local,e.id)[0];
    return `<article class="equipment-card ${e.id===equipmentId?'selected':''}"><div class="equipment-visual"><span class="equipment-scope">${escape(e.type.toUpperCase())}</span>${e.id===equipmentId?'<span class="selected-chip">ACTIVE WORKSPACE</span>':''}${equipmentSVG(e.id)}</div><div class="equipment-body"><div class="card-top"><div><div class="equipment-id">${e.id}</div><div class="equipment-name">${escape(e.name)}</div></div>${issues.length?`<span class="badge open">${issues.length} OPEN FOLLOW-UP${issues.length===1?'':'S'}</span>`:'<span class="badge resolved">NO OPEN FOLLOW-UPS</span>'}</div><div class="equipment-meta"><div>LOCATION<strong>${escape(e.zone)}</strong></div><div>MAINTENANCE OWNER<strong>${escape(e.team)}</strong></div></div><div class="issue-strip"><strong>${issues.length?'HANDOVER FOCUS':'CURRENT RECORD'}</strong>${escape(issues[0]?.observation||'No unresolved issue is recorded. This is not operational release.')}</div><div class="card-bottom"><span>${recordCount(e.id)} confirmed records</span><button class="text-button" data-equipment="${e.id}" data-target="history">View workspace →</button></div><div class="table-secondary">Last record ${escape(date(latest.timestamp))}</div></div></article>`;
  }).join('')}</div>
+  ${evidenceTrail()}
  <div class="section-heading"><div><h2>Recent maintenance · ${equipmentId}</h2><p>Confirmed observations from the active equipment workspace.</p></div><a class="text-button" href="#history">View history →</a></div>
  ${recordTable(recordsFor(data,local,equipmentId).slice(0,3))}
  <div class="guide"><div class="guide-icon">${icon('handover')}</div><div><h3>From one shift to the next. Without losing the context.</h3><p>Capture an observation, confirm the facts, then inspect a handover with linked evidence.</p></div><button type="button" class="button secondary small" data-action="tour-start">Start guided demo ${icon('arrow')}</button></div>

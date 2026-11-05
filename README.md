@@ -1,4 +1,4 @@
-# ShiftBridge Interactive Demo v0.3 — Knowledge Continuity Walkthrough
+# ShiftBridge Interactive Demo v0.4 — Trustworthy Knowledge Continuity
 
 **AI Maintenance Knowledge & Handover** — an English interactive concept demo for the fictional Aster Semiconductor · Fab 01.
 
@@ -13,6 +13,16 @@ Intended GitHub Pages URL: https://yu-rong321.github.io/shiftbridge-demo/
 5. **Equipment Knowledge Q&A** — ask about open issues, recent work or listed version-aware SOP topics. Every supported answer cites synthetic evidence.
 
 The Facility Overview also includes **Start guided demo**, a five-step visitor flow: explore ETCH-01 → inspect example narrative → review and confirm → inspect handover → ask with citations. The guide never resets previous confirmed browser data and can be exited at any time. Unsupported or cross-equipment questions abstain.
+
+## Evidence integrity and three-shift walkthrough (v0.4)
+
+The overview now includes a **three-shift evidence trail** for the fictional ETCH-01 issue `ISS-103`. Each of its three source records can be opened independently: `REC-104` (OPEN, observation logged), `REC-105` (MONITORING, issue recurred), and `REC-106` (RESOLVED only after a separately recorded synthetic verification). This is a complete traceable example, not a claim that equipment was released for production.
+
+New browser-local observations more than five minutes in the future are rejected. A later entry for an existing issue must have a strictly newer observation time; equal/older timestamps are rejected instead of silently changing the issue's latest handover state. Previously recorded synthetic seed history remains unchanged. This is a conservative **demo policy**: the browser clock and localStorage are not trusted production audit infrastructure.
+
+The fixed Q&A refuses mixed SOP + issue-status requests instead of answering only one part. It also recognizes issue-scoped maintenance questions such as "What was checked for ISS-101?". All supported answers still cite their source records, and unsupported topics abstain.
+
+Acceptance matrix and browser-check list: [`docs/v0.4-verification.md`](docs/v0.4-verification.md). An evidence-based review of the separate UGREEN Round 1 Skill ZIP and proposal PDF, including the major scope and schema differences from this website, is in [`docs/ugreen-skill-proposal-alignment-v0.4.md`](docs/ugreen-skill-proposal-alignment-v0.4.md). **The two submission candidates were inspected but not modified.**
 
 ## Natural-language demonstration and cross-shift continuity (v0.3)
 
@@ -64,10 +74,10 @@ Hash routes and relative asset URLs support the `/shiftbridge-demo/` project sub
 
 ## Source layout
 
-- `data/demo.json`: six seed records, two equipment entries, four current SOP sections, two archived revisions and a guided synthetic shift note.
+- `data/demo.json`: nine seed records (including a three-shift same-issue case), two equipment entries, four current SOP sections, two archived revisions and a guided synthetic shift note.
 - `js/core.js`: pure validation, confirmation, equipment scoping, issue state, handover and Q&A.
 - `js/app.js`: English DOM interface and browser-local simulated storage.
 - `tests/`: domain acceptance tests. `ui/`: DOM workflow integration tests.
 - `docs/`: design, implementation progress and verification notes.
 
-No external fonts, images, scripts, analytics or runtime services are requested by the site. `npm test` and jsdom `npm run test:ui` check the narrative parser, linked issue continuity, guided path, safety refusal and prior v0.2 behavior. The equipment illustrations and bridge icon are original SVGs. This version is suitable for demonstrating the product concept, not real factory deployment.
+No external fonts, images, scripts, analytics or runtime services are requested by the site. `npm test` and jsdom `npm run test:ui` check narrative parsing, issue chronology, three-shift provenance, guided path, safety refusal and prior v0.2/v0.3 behavior. The equipment illustrations and bridge icon are original SVGs. This version is suitable for demonstrating the product concept, not real factory deployment. Its five website views must not be presented as five implemented UGREEN Skill modes; the reviewed Round 1 Skill candidate has only Record My Shift and Brief Next Shift.

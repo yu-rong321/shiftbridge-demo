@@ -1,4 +1,6 @@
-# v0.1 verification record
+# v0.1 verification record (historical)
+
+**This is an archived v0.1 record, not current deployment status.** GitHub Pages was subsequently enabled and later v0.2/v0.3 Actions succeeded. For current trust, demo and publication acceptance use [v0.4 verification](v0.4-verification.md), not the historical failure below.
 
 Date: 2026-11-05 (Europe/Berlin). Repository: yu-rong321/shiftbridge-demo.
 

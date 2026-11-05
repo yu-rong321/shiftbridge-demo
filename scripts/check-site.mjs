@@ -16,9 +16,10 @@ for(const file of ['index.html','js/app.js','js/core.js','css/styles.css']){
  assert.ok(!/https?:\/\/(?!www\.w3\.org)/.test(text),`${file} contains an external runtime URL`);
 }
 const fixture=JSON.parse(await readFile('data/demo.json','utf8'));
-assert.equal(fixture.equipment.length,2);assert.equal(fixture.records.length,6);const sources=[...fixture.records,...fixture.sops];
+assert.equal(fixture.equipment.length,2);assert.equal(fixture.records.length,9);const sources=[...fixture.records,...fixture.sops];
 assert.equal(new Set(sources.map(x=>x.id)).size,sources.length);
 assert.equal(fixture.sops.length,6);
+assert.equal(fixture.records.filter(r=>r.equipmentId===fixture.featuredCase.equipmentId&&r.issueId===fixture.featuredCase.issueId).length,3);
 assert.match(fixture.guidedDemoNote,/ETCH-01/);
 assert.match(await readFile('js/app.js','utf8'),/Start guided demo/);
 assert.match(await readFile('js/app.js','utf8'),/Generate demo draft/);

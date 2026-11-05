@@ -15,6 +15,7 @@ export function validateRecord(input, data, local=[]) {
   const error = (field, message) => errors.push({field, message});
   if (!known(data, r.equipmentId)) error('equipmentId','Select a known equipment ID.');
   if (!validTime(r.timestamp)) error('timestamp','Enter a valid observation date and time (UTC).');
+  else if (Date.parse(utc(r.timestamp)) > Date.now()+5*60*1000) error('timestamp','Observation time cannot be in the future (more than five minutes of clock skew).');
   for (const [key, label] of [['author','Recorded by'],['symptom','Observation'],['action','Action taken']]) {
     if (!r[key]) error(key,`${label} is required.`);
   }
@@ -27,6 +28,13 @@ export function validateRecord(input, data, local=[]) {
   const seedIssue=data.records.some(x=>x.issueId===r.issueId&&x.equipmentId===r.equipmentId);
   const localIssue=Array.isArray(local)&&local.some(x=>x.issueId===r.issueId&&x.equipmentId===r.equipmentId&&x.confirmed===true&&x.confirmationKind==='human_demo');
   if(r.issueId && !seedIssue && !localIssue) error('issueId','This issue is not in the selected equipment\'s confirmed history.');
+  const seedRecord=data.records.some(x=>x.id===input?.id&&x.equipmentId===r.equipmentId&&x.issueId===r.issueId);
+  if(r.issueId && validTime(r.timestamp) && !seedRecord){
+    const prior=[...data.records,...(Array.isArray(local)?local:[])]
+      .filter(x=>x.equipmentId===r.equipmentId&&x.issueId===r.issueId&&x.confirmed===true);
+    if(prior.some(x=>validTime(x.timestamp)&&Date.parse(utc(x.timestamp))>=Date.parse(utc(r.timestamp))))
+      error('timestamp','A linked issue needs an observation time later than its last confirmed observation.');
+  }
   for (const key of fields) if (r[key].length > (['symptom','action','nextAction','verification'].includes(key) ? 1500 : key==='rawNote' ? 2000 : 100)) error(key,'This field is too long.');
   return errors;
 }
@@ -191,7 +199,9 @@ export function answerQuestion(data, local, equipmentId, question) {
   if (requestedIssues.some(id=>!issues.some(i=>i.issueId.toLowerCase()===id))) return abstain(`That issue has no confirmed evidence in the ${equipmentId} workspace. Check its ID and equipment scope.`);
   if (requestedIssues.length) issues=issues.filter(i=>requestedIssues.includes(i.issueId.toLowerCase()));
   const statusQuestion=/status|open|unresolved|fixed|repair|resolved|handover|follow.?up|brief|issues/.test(q);
-  const sopQuestion=/sop|procedure|checklist|check|pumpdown|vacuum|reflected|\brf\b|cooling|closure/.test(q);
+  const sopQuestion=/sop|procedure|checklist|pumpdown|vacuum|reflected|\brf\b|cooling|closure/.test(q);
+  if(sopQuestion && statusQuestion && !historicalSopQuestion)
+    return abstain('This question combines SOP guidance and issue status. Ask one at a time so both answers remain fully sourced.');
   const items=[];
   if (sopQuestion && (!statusQuestion || historicalSopQuestion)) {
     const topics=[];
@@ -221,7 +231,7 @@ export function answerQuestion(data, local, equipmentId, question) {
   } else if (statusQuestion) {
     if (/\bopen\b|\bunresolved\b|follow.?up/.test(q) && !/\bresolved\b|\bclosed\b/.test(q)) issues=issues.filter(i=>i.status!=='RESOLVED');
     for (const i of issues) items.push({text:`${i.issueId} — ${i.status}. ${i.observation} ${i.status==='RESOLVED' ? `Recorded verification: ${i.verification}` : `Next action: ${i.nextAction} No verified repair is established for this issue.`}`,sourceIds:[i.sourceId]});
-  } else if (/recent|latest|last|history|maintenance|action|work|happen/.test(q)) {
+  } else if (/recent|latest|last|history|maintenance|action|work|happen|checked|inspected|performed/.test(q)) {
     const matching=recordsFor(data,local,equipmentId).filter(r=>!requestedIssues.length||requestedIssues.includes(r.issueId.toLowerCase()));
     for (const r of matching.slice(0,3)) items.push({text:`${r.id} · ${r.status}: Reported action: ${r.action}${r.status!=='RESOLVED'?' This record does not establish a verified repair.':''}`,sourceIds:[r.id]});
   } else return abstain('No supported answer was found in the available evidence. Try a question about open issues, recent work or a listed SOP topic.');
