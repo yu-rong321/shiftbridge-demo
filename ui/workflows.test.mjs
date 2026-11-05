@@ -19,7 +19,7 @@ async function open({storage=null,failStorage=false,dataset=seed}={}){
  w.HTMLDialogElement.prototype.close=function(){this.open=false;};
  if(storage)w.localStorage.setItem(key,storage);
  if(failStorage)w.Storage.prototype.setItem=function(){throw new Error('Quota exceeded');};
- const code=app.replace(/^import[^\n]+\n/,'const {STATUSES,validateRecord,reviewRecord,confirmRecord,recordsFor,issuesFor,handover,answerQuestion,resolveSource,restoreRecords,sopVersionState,sopCatalog}=window.__core;\n').replaceAll('import.meta.url',JSON.stringify('https://example.test/shiftbridge-demo/js/app.js'));
+ const code=app.replace(/^import[^\n]+\n/,'const {STATUSES,validateRecord,reviewRecord,confirmRecord,recordsFor,issuesFor,handover,answerQuestion,resolveSource,restoreRecords,sopVersionState,sopCatalog,parseShiftNote}=window.__core;\n').replaceAll('import.meta.url',JSON.stringify('https://example.test/shiftbridge-demo/js/app.js'));
  const errors=[];w.addEventListener('error',event=>errors.push(String(event.error)));
  // A closure mirrors ES-module bindings; window.history must not replace history().
  w.eval(`(function(){'use strict';\n${code}\n})();`);await tick();
@@ -118,4 +118,94 @@ test('SOP version conflict in demo data abstains in the browser UI',async()=>{
     assert.match(c.d.querySelector('#answer-result').textContent,/No supported answer/);
     assert.match(c.d.querySelector('main').textContent,/SOP validity conflict/);
   }finally{c.close();}
+});
+
+test('guided visitor path moves from equipment to narrative, review, handover and cited Q&A',async()=>{
+ const c=await open();
+ try{
+   click(c,'[data-action="tour-start"]');
+   assert.match(c.d.querySelector('main').textContent,/STEP 1\/5/);
+   click(c,'[data-action="tour-next"]');await tick();
+   assert.equal(c.w.location.hash,'#record');
+   assert.match(c.d.querySelector('#raw-note').value,/ETCH-01/);
+   assert.match(c.d.querySelector('main').textContent,/STEP 2\/5/);
+   click(c,'[data-action="generate-draft"]');
+   assert.equal(c.d.querySelector('#author').value,'Jamie Park');
+   assert.match(c.d.querySelector('#symptom').value,/chamber door indicator/);
+   assert.equal(c.d.querySelector('#issueId').value,'');
+   assert.match(c.d.querySelector('main').textContent,/STEP 3\/5/);
+   submit(c,'record-form');
+   assert.match(c.d.querySelector('main').textContent,/Original raw note/);
+   assert.equal(c.d.querySelector('[data-action="save-record"]').disabled,true);
+   confirm(c);
+   assert.match(c.d.querySelector('main').textContent,/Demo record saved/);
+   assert.match(c.d.querySelector('main').textContent,/STEP 4\/5/);
+   click(c,'[data-action="tour-next"]');await tick();
+   assert.equal(c.w.location.hash,'#brief');
+   assert.match(c.d.querySelector('main').textContent,/chamber door indicator/);
+   click(c,'[data-action="tour-next"]');await tick();
+   assert.equal(c.w.location.hash,'#knowledge');
+   assert.match(c.d.querySelector('main').textContent,/STEP 5\/5/);
+   assert.match(c.d.querySelector('#question').value,/open/);
+   submit(c,'question-form');
+   assert.ok(c.d.querySelector('#answer-result [data-source]'));
+   click(c,'[data-action="tour-finish"]');
+   assert.ok(!c.d.querySelector('main').textContent.includes('GUIDED DEMO · STEP'));
+   assert.equal(JSON.parse(c.w.localStorage.getItem(key)).length,1);
+ }finally{c.close();}
+});
+test('unrecognized free-text note does not auto-create or confirm a maintenance record',async()=>{
+ const c=await open();try{
+   await go(c,'record');
+   input(c,'raw-note','On ETCH-02 a fault appeared. Please make up the rest.');
+   click(c,'[data-action="generate-draft"]');
+   assert.match(c.d.querySelector('#note-message').textContent,/selected equipment/i);
+   assert.equal(c.d.querySelector('#author').value,'');
+   assert.equal(c.w.localStorage.getItem(key),null);
+ }finally{c.close();}
+});
+test('new locally created issue is selectable and traceable on another shift',async()=>{
+ const c=await open();let storage,issue;
+ try{
+   await go(c,'record');
+   click(c,'[data-action="sample"]');
+   input(c,'issueId','');
+   input(c,'timestamp','2026-11-05T14:00');
+   submit(c,'record-form');confirm(c);
+   issue=JSON.parse(c.w.localStorage.getItem(key))[0].issueId;
+   assert.match(issue,/^ISS-LOCAL-/);
+   click(c,'[data-action="new-record"]');
+   assert.ok([...c.d.querySelector('#issueId').options].some(o=>o.value===issue));
+   click(c,'[data-action="sample"]');
+   input(c,'issueId',issue);
+   input(c,'timestamp','2026-11-05T22:00');
+   input(c,'author','Maya Lin');
+   input(c,'shift','Night');
+   input(c,'symptom','The issue was observed again during the night shift.');
+   submit(c,'record-form');confirm(c);
+   storage=c.w.localStorage.getItem(key);
+   assert.equal(JSON.parse(storage).length,2);
+   await go(c,'brief');
+   assert.match(c.d.querySelector('main').textContent,new RegExp(issue));
+   await go(c,'knowledge');
+   input(c,'question',`What is the status of ${issue}?`);
+   submit(c,'question-form');
+   assert.match(c.d.querySelector('#answer-result').textContent,new RegExp(issue));
+ }finally{c.close();}
+ const reload=await open({storage});
+ try{
+   await go(reload,'history');
+   const ids=[...reload.d.querySelectorAll('#history-results [data-source]')].map(e=>e.dataset.source);
+   assert.equal(ids.filter(id=>id.startsWith('LOCAL-')).length,2);
+ }finally{reload.close();}
+});
+test('guided exit does not reset previously confirmed records',async()=>{
+ const record=core.confirmRecord(core.reviewRecord({equipmentId:'ETCH-01',issueId:'',timestamp:'2026-11-05T14:00',author:'Jamie',shift:'Day',symptom:'Local observation',action:'Logged observation',status:'OPEN',nextAction:'Owner review',verification:''},seed),true,seed,'LOCAL-GUIDE-SAVED');
+ const c=await open({storage:JSON.stringify([record])});
+ try{
+   click(c,'[data-action="tour-start"]');
+   click(c,'[data-action="tour-exit"]');
+   assert.ok(!c.d.querySelector('main').textContent.includes('GUIDED DEMO · STEP'));
+   assert.equal(JSON.parse(c.w.localStorage.getItem(key)).length,1);
+ }finally{c.close();}
 });

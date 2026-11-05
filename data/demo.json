@@ -242,5 +242,6 @@
       "supersedesId": null,
       "supersededById": "SOP-02-2"
     }
-  ]
+  ],
+  "guidedDemoNote": "On ETCH-01 during the Day shift, I observed a new intermittent chamber door indicator warning during a fictional pre-run check. I reviewed the simulated event log and recorded the warning without adjusting the equipment. The issue remains OPEN. Next shift: Maya Lin will review the logged warning with the equipment owner. Recorded by: Jamie Park."
 }

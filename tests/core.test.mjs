@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { validateRecord, reviewRecord, confirmRecord, recordsFor, issuesFor, handover, answerQuestion, resolveSource, restoreRecords, sopVersionState, sopCatalog } from '../js/core.js';
+import { validateRecord, reviewRecord, confirmRecord, recordsFor, issuesFor, handover, answerQuestion, resolveSource, restoreRecords, sopVersionState, sopCatalog, parseShiftNote } from '../js/core.js';
 
 const data = JSON.parse(await readFile(new URL('../data/demo.json', import.meta.url)));
 const valid = {equipmentId:'ETCH-01', issueId:'', timestamp:'2026-11-05T14:00', author:'Alex Chen', shift:'Day', symptom:'Long pumpdown observed', action:'Reviewed trend and recorded observation', status:'OPEN', nextAction:'Recheck at next handover', verification:''};
@@ -200,4 +200,91 @@ test('all SOP metadata and chains validate independently for each topic',()=>{
       assert.equal(result.active.length,1);
     }
   }
+});
+
+test('limited shift narrative extracts only explicit facts and preserves original wording',()=>{
+  const parsed=parseShiftNote(data.guidedDemoNote,'ETCH-01');
+  assert.equal(parsed.supported,true,parsed.message);
+  assert.equal(parsed.draft.equipmentId,'ETCH-01');
+  assert.equal(parsed.draft.author,'Jamie Park');
+  assert.equal(parsed.draft.shift,'Day');
+  assert.equal(parsed.draft.status,'OPEN');
+  assert.match(parsed.draft.symptom,/chamber door indicator/);
+  assert.match(parsed.draft.action,/^I reviewed/);
+  assert.match(parsed.draft.nextAction,/Maya Lin/);
+  assert.equal(parsed.draft.rawNote,data.guidedDemoNote);
+  assert.equal(parsed.draft.issueId,'');
+});
+test('the narrative extractor abstains on unknown, incomplete or cross-equipment notes',()=>{
+  for(const [note,equipmentId] of [
+    [data.guidedDemoNote,'ETCH-02'],
+    ['The pumpdown is maybe broken, please handle it.','ETCH-01'],
+    [data.guidedDemoNote.replace('ETCH-01','ETCH-02 and ETCH-01'),'ETCH-01'],
+    [data.guidedDemoNote.replace('The issue remains OPEN.','The issue remains OPEN. The issue is RESOLVED.'),'ETCH-01'],
+    ['', 'ETCH-01'],
+  ]){
+    const result=parseShiftNote(note,equipmentId);
+    assert.equal(result.supported,false);
+    assert.equal(result.draft,null);
+  }
+});
+test('parsed draft still requires human review and confirmation',()=>{
+  const parsed=parseShiftNote(data.guidedDemoNote,'ETCH-01');
+  const review=reviewRecord({ ...valid,...parsed.draft },data);
+  assert.throws(()=>confirmRecord(review,false,data,'LOCAL-PARSE'),/confirmation/i);
+  const record=confirmRecord(review,true,data,'LOCAL-PARSE');
+  assert.equal(record.rawNote,data.guidedDemoNote);
+  assert.equal(record.status,'OPEN');
+});
+test('a confirmed local issue can receive a follow-up from another shift',()=>{
+  const root=confirmRecord(reviewRecord({...valid,issueId:'',rawNote:data.guidedDemoNote},data),true,data,'LOCAL-ROOT');
+  const follow=confirmRecord(reviewRecord({...valid,issueId:root.issueId,shift:'Night',author:'Maya Lin',
+    timestamp:'2026-11-05T21:00',symptom:'The fictional indicator warning repeated once',
+    action:'Reviewed the previous record and captured a fresh observation',
+    status:'MONITORING',nextAction:'Day shift: request equipment-owner review'},data,[root]),true,data,'LOCAL-FOLLOW',[root]);
+  const restored=restoreRecords(JSON.stringify([root,follow]),data);
+  assert.equal(restored.warning,'');
+  assert.equal(restored.records.length,2);
+  assert.equal(recordsFor(data,restored.records,'ETCH-01').filter(r=>r.issueId===root.issueId).length,2);
+  assert.equal(issuesFor(data,restored.records,'ETCH-01').find(i=>i.issueId===root.issueId).status,'MONITORING');
+  const answer=answerQuestion(data,restored.records,'ETCH-01',`What is the status of ${root.issueId}?`);
+  assert.equal(answer.supported,true);
+  assert.deepEqual(answer.items[0].sourceIds,['LOCAL-FOLLOW']);
+});
+test('a local issue may be resolved later only with a new verification',()=>{
+  const root=confirmRecord(reviewRecord(valid,data),true,data,'LOCAL-OPEN');
+  assert.ok(validateRecord({...valid,issueId:root.issueId,status:'RESOLVED',nextAction:'',verification:''},data,[root]).some(x=>x.field==='verification'));
+  const done=confirmRecord(reviewRecord({...valid,issueId:root.issueId,shift:'Night',timestamp:'2026-11-05T22:00',
+    status:'RESOLVED',nextAction:'',verification:'Maya Lin verified the fictional acceptance log after checks'},data,[root]),true,data,'LOCAL-DONE',[root]);
+  const current=issuesFor(data,[root,done],'ETCH-01').find(i=>i.issueId===root.issueId);
+  assert.equal(current.status,'RESOLVED');
+  assert.equal(current.sourceId,'LOCAL-DONE');
+});
+test('cross-equipment, forged and out-of-order local issue references fail closed',()=>{
+  const root=confirmRecord(reviewRecord(valid,data),true,data,'LOCAL-CHAIN-ROOT');
+  const follow=confirmRecord(reviewRecord({...valid,issueId:root.issueId,shift:'Night',
+    timestamp:'2026-11-05T22:00'},data,[root]),true,data,'LOCAL-CHAIN-FOLLOW',[root]);
+  assert.ok(validateRecord({...valid,equipmentId:'ETCH-02',issueId:root.issueId},data,[root]).some(x=>x.field==='issueId'));
+  assert.equal(restoreRecords(JSON.stringify([follow]),data).records.length,0);
+  const reversed=restoreRecords(JSON.stringify([follow,root]),data);
+  assert.equal(reversed.records.length,1);
+  assert.equal(reversed.records[0].id,root.id);
+  assert.match(reversed.warning,/invalid local record/);
+  assert.equal(restoreRecords(JSON.stringify([root,{...follow,equipmentId:'ETCH-02'}]),data).records.length,1);
+});
+test('existing v0.1 browser records remain loadable',()=>{
+  const v01=confirmRecord(reviewRecord(valid,data),true,data,'LOCAL-LEGACY');
+  delete v01.rawNote;
+  const recovered=restoreRecords(JSON.stringify([v01]),data);
+  assert.equal(recovered.records.length,1);
+  assert.equal(recovered.warning,'');
+});
+
+test('lowercase UUID-style local issue IDs remain searchable and source-cited',()=>{
+  const source=confirmRecord(reviewRecord(valid,data),true,data,'LOCAL-1a2b3c4d-abc1');
+  const result=answerQuestion(data,[source],'ETCH-01',`What is the status of ${source.issueId}?`);
+  assert.equal(result.supported,true);
+  assert.equal(result.items.length,1);
+  assert.match(result.items[0].text,/ISS-LOCAL-1a2b3c4d-abc1/);
+  assert.deepEqual(result.items[0].sourceIds,[source.id]);
 });

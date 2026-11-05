@@ -1,4 +1,4 @@
-import {STATUSES,validateRecord,reviewRecord,confirmRecord,recordsFor,issuesFor,handover,answerQuestion,resolveSource,restoreRecords,sopVersionState,sopCatalog} from './core.js';
+import {STATUSES,validateRecord,reviewRecord,confirmRecord,recordsFor,issuesFor,handover,answerQuestion,resolveSource,restoreRecords,sopVersionState,sopCatalog,parseShiftNote} from './core.js';
 
 const STORAGE_KEY='shiftbridge.demo.v01.records';
 const $=selector=>document.querySelector(selector);
@@ -9,7 +9,7 @@ const badge=status=>`<span class="badge ${escape(status.toLowerCase())}">${escap
 const source=id=>`<button type="button" class="source-button" data-source="${escape(id)}" aria-label="View source ${escape(id)}">${icon('link')}${escape(id)}</button>`;
 const date=value=>new Date(value).toLocaleString('en-GB',{timeZone:'UTC',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false})+' UTC';
 const detail=(label,value)=>`<div><dt>${escape(label)}</dt><dd>${escape(value||'—')}</dd></div>`;
-let data,local=[],equipmentId='ETCH-01',view='overview',draft=null,review=null,lastSaved=null,answer=null,question='',historyStatus='ALL',historyQuery='',warning='',storageWritable=true,toastTimer;
+let data,local=[],equipmentId='ETCH-01',view='overview',draft=null,review=null,lastSaved=null,answer=null,question='',historyStatus='ALL',historyQuery='',warning='',storageWritable=true,toastTimer,guidedStep=-1,rawNote='',noteMessage='';
 const routes=['overview','record','history','brief','knowledge'];
 const route=()=>routes.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
 const equipment=()=>data.equipment.find(e=>e.id===equipmentId);
@@ -22,6 +22,22 @@ function pageHeader(title,subtitle,actions=''){return `<div class="page-header">
 function context(){return `<div class="workspace-context"><strong>${equipmentId}</strong><span class="context-divider">/</span><span>${escape(equipment().name)}</span><span class="context-divider">/</span><span>${escape(equipment().zone)}</span><span class="badge confirmed">EQUIPMENT-SCOPED</span></div>`;}
 function recordTable(records){return `<div class="table-wrap"><table><thead><tr><th>OBSERVATION / RECORD</th><th>DATE & SHIFT</th><th>STATUS AT ENTRY</th><th>SOURCE</th></tr></thead><tbody>${records.length?records.map(r=>`<tr><td><div class="record-title">${escape(r.symptom)}</div><span class="table-secondary"><span class="mono">${escape(r.equipmentId)} · ${escape(r.issueId)}</span> · ${escape(r.author)}</span></td><td>${escape(date(r.timestamp))}<span class="table-secondary">${escape(r.shift)} shift</span></td><td>${badge(r.status)}<span class="table-secondary">Human-confirmed demo</span></td><td>${source(r.id)}</td></tr>`).join(''):`<tr><td colspan="4" class="empty">No confirmed records match these filters.</td></tr>`}</tbody></table></div>`;}
 
+const guideTitles=['Explore ETCH-01','Capture a shift note','Review and confirm','Brief the next shift','Ask with citations'];
+function guideBanner(){
+ if(guidedStep<0)return '';
+ const descriptions=[
+   'Inspect the selected fictional ETCH-01 equipment workspace before recording anything.',
+   'Use the example narrative or edit it. Generate a deterministic, editable draft.',
+   'Inspect each extracted field, then explicitly review and confirm before saving.',
+   'Inspect the newly confirmed issue and its linked source in the handover.',
+   'Ask what issues are open and inspect the cited maintenance records.'
+ ];
+ const action=guidedStep===0?'<button type="button" class="button small" data-action="tour-next">Continue: Record shift →</button>':
+   guidedStep===3&&view==='record'?'<button type="button" class="button small" data-action="tour-next">Continue: Handover →</button>':
+   guidedStep===3&&view==='brief'?'<button type="button" class="button small" data-action="tour-next">Continue: Ask a question →</button>':
+   guidedStep===4&&view==='knowledge'&&answer?.supported?'<button type="button" class="button small" data-action="tour-finish">Finish guided demo ✓</button>':'';
+ return `<section class="tour-bar" aria-label="Guided demonstration"><div class="tour-info"><span class="tour-step">GUIDED DEMO · STEP ${guidedStep+1}/5</span><h2>${escape(guideTitles[guidedStep])}</h2><p>${escape(descriptions[guidedStep])}</p></div><div class="tour-actions">${action}<button type="button" class="text-button" data-action="tour-exit">Exit guide</button></div></section>`;
+}
 function overview(){
  const total=data.equipment.reduce((n,e)=>n+recordCount(e.id),0),open=data.equipment.reduce((n,e)=>n+openIssues(e.id).length,0);
  const stats=[['Equipment in scope','2','Etch Bay A · Fab 01','grid',''],['Open follow-ups',String(open),'Unresolved · handover required','alert','amber'],['Confirmed records',String(total),'Synthetic seed + local demo','file','teal'],['Your demo records',String(local.length),'Saved in this browser only','check','']];
@@ -34,7 +50,7 @@ function overview(){
  }).join('')}</div>
  <div class="section-heading"><div><h2>Recent maintenance · ${equipmentId}</h2><p>Confirmed observations from the active equipment workspace.</p></div><a class="text-button" href="#history">View history →</a></div>
  ${recordTable(recordsFor(data,local,equipmentId).slice(0,3))}
- <div class="guide"><div class="guide-icon">${icon('handover')}</div><div><h3>From one shift to the next. Without losing the context.</h3><p>Capture an observation, confirm the facts, then inspect a handover with linked evidence.</p></div><a class="button secondary small" href="#record">Try the demo ${icon('arrow')}</a></div>
+ <div class="guide"><div class="guide-icon">${icon('handover')}</div><div><h3>From one shift to the next. Without losing the context.</h3><p>Capture an observation, confirm the facts, then inspect a handover with linked evidence.</p></div><button type="button" class="button secondary small" data-action="tour-start">Start guided demo ${icon('arrow')}</button></div>
  <p class="trace-note">Scenario snapshot: 05 Nov 2026 · All observation times use UTC. Equipment illustrations and all records are fictional.</p>`;
 }
 
@@ -47,10 +63,11 @@ function formField(key,label,type='text',required=false,hint=''){
 function recordView(){
  const header=pageHeader('Record My Shift','Turn an observation into a confirmed, traceable handover record.');
  if(lastSaved)return header+context()+steps(2)+`<div class="success-banner"><h2>Demo record saved</h2><p><span class="mono">${escape(lastSaved.id)}</span> · ${equipmentId} · Human-confirmed in this demo.</p><p>Stored in this browser only. No NAS, shared database or AI service was contacted.</p></div><div class="panel"><h2>The next shift can now find this evidence.</h2><p class="muted">${escape(lastSaved.symptom)}</p><div class="citation-row">${source(lastSaved.id)}${badge(lastSaved.status)}</div><div class="button-row"><button class="button secondary" data-action="new-record">Record another observation</button><a class="button" href="#brief">Brief Next Shift ${icon('arrow')}</a></div></div>`;
- if(review){const r=review.record;return header+context()+steps(1)+`<div class="two-column"><section class="panel"><div class="panel-title"><h2>Review the record</h2><span class="badge">UNCONFIRMED</span></div><dl class="detail-list">${detail('Equipment',r.equipmentId)}${detail('Issue',r.issueId||'New issue — assigned on save')}${detail('Observation time',r.timestamp+' UTC')}${detail('Recorded by / shift',r.author+' / '+r.shift)}${detail('Observation',r.symptom)}${detail('Action taken',r.action)}${detail('Issue status',r.status)}${detail('Next action',r.nextAction)}${detail('Verification evidence',r.verification)}</dl><div class="review-notice">This is still an unconfirmed record. It will enter history, handover and Q&A only after you confirm and save.</div><label class="confirmation"><input id="acknowledge" type="checkbox"> <span>I have reviewed the equipment ID, facts, issue status and next action. I confirm this synthetic demo record as <strong>${escape(r.author)}</strong>.</span></label><div class="button-row"><button class="button secondary" data-action="edit-record">Back to edit</button><button class="button" data-action="save-record" disabled>Confirm & simulate save ${icon('check')}</button></div></section><aside class="aside-panel"><h3>One explicit confirmation.</h3><p>Saving is a separate action after review. Editing any field requires a fresh review.</p><div class="aside-divider"></div><h3>OPEN stays open.</h3><p>Taking an action does not prove a repair. Status and verification are recorded explicitly.</p><p>This checkbox simulates human review; it is not identity verification.</p></aside></div>`;}
+ if(review){const r=review.record;return header+context()+steps(1)+`<div class="two-column"><section class="panel"><div class="panel-title"><h2>Review the record</h2><span class="badge">UNCONFIRMED</span></div><dl class="detail-list">${detail('Equipment',r.equipmentId)}${detail('Issue',r.issueId||'New issue — assigned on save')}${detail('Observation time',r.timestamp+' UTC')}${detail('Recorded by / shift',r.author+' / '+r.shift)}${detail('Observation',r.symptom)}${detail('Action taken',r.action)}${detail('Issue status',r.status)}${detail('Next action',r.nextAction)}${detail('Verification evidence',r.verification)}${r.rawNote?detail('Original raw note',r.rawNote):''}</dl><div class="review-notice">This is still an unconfirmed record. It will enter history, handover and Q&A only after you confirm and save.</div><label class="confirmation"><input id="acknowledge" type="checkbox"> <span>I have reviewed the equipment ID, facts, issue status and next action. I confirm this synthetic demo record as <strong>${escape(r.author)}</strong>.</span></label><div class="button-row"><button class="button secondary" data-action="edit-record">Back to edit</button><button class="button" data-action="save-record" disabled>Confirm & simulate save ${icon('check')}</button></div></section><aside class="aside-panel"><h3>One explicit confirmation.</h3><p>Saving is a separate action after review. Editing any field requires a fresh review.</p><div class="aside-divider"></div><h3>OPEN stays open.</h3><p>Taking an action does not prove a repair. Status and verification are recorded explicitly.</p><p>This checkbox simulates human review; it is not identity verification.</p></aside></div>`;}
  if(!draft||draft.equipmentId!==equipmentId)draft=defaultDraft();
- const issues=issuesFor(data,local,equipmentId).filter(i=>!i.issueId.startsWith('ISS-LOCAL-'));
- return header+context()+steps(0)+`<div class="two-column"><section class="panel"><div class="panel-title"><h2>Shift observation</h2><button class="text-button" data-action="sample">Load sample record</button></div><form id="record-form" novalidate><div id="validation-errors" class="validation-box" role="alert" hidden></div><div class="form-grid"><div class="field"><label for="equipment-locked">Equipment ID</label><input id="equipment-locked" value="${equipmentId}" readonly aria-describedby="equipment-hint"><p class="hint" id="equipment-hint">Switch equipment using the workspace selector above.</p></div><div class="field"><label for="issueId">Related issue</label><select name="issueId" id="issueId"><option value="">New observation / new issue</option>${issues.map(i=>`<option value="${escape(i.issueId)}" ${draft.issueId===i.issueId?'selected':''}>${escape(i.issueId)} · ${i.status}</option>`).join('')}</select><span class="field-error" id="issueId-error"></span></div>${formField('timestamp','Observation time (UTC)','datetime-local',true)}${formField('author','Recorded by','text',true)}<div class="field"><label for="shift">Shift <span class="required">*</span></label><select name="shift" id="shift">${['Day','Night'].map(s=>`<option ${draft.shift===s?'selected':''}>${s}</option>`).join('')}</select><span class="field-error" id="shift-error"></span></div><div class="field"><label for="status">Issue status <span class="required">*</span></label><select name="status" id="status">${STATUSES.map(s=>`<option ${draft.status===s?'selected':''}>${s}</option>`).join('')}</select><span class="field-error" id="status-error"></span></div>${formField('symptom','Observation','textarea',true)}${formField('action','Action taken','textarea',true)}${formField('nextAction','Next action / owner','textarea',draft.status!=='RESOLVED','Required for OPEN and MONITORING issues.')}${formField('verification','Verification evidence','textarea',draft.status==='RESOLVED','Required for RESOLVED. Describe the evidence; do not infer success.')}</div><div class="form-footer"><p class="hint">Draft only. Nothing enters official demo history until review and confirmation.</p><button class="button" type="submit">Review record ${icon('arrow')}</button></div></form></section><aside class="aside-panel"><h3>Capture facts that travel.</h3><p>A useful handover separates what happened, what was done, what is still open and what comes next.</p><ul><li>Equipment context is locked to <strong>${equipmentId}</strong>.</li><li>OPEN and MONITORING require a next action.</li><li>RESOLVED requires recorded verification.</li><li>Drafts are excluded from all answers and summaries.</li></ul><div class="aside-divider"></div><h3>Simulation boundary</h3><p>All records are synthetic. This demo saves confirmed records locally in your browser and does not authenticate the named reviewer.</p></aside></div>`;
+ const issues=issuesFor(data,local,equipmentId);
+ const narrativePanel=`<section class="note-converter"><div class="panel-title"><h2>Raw shift note</h2><span class="badge">DETERMINISTIC DEMO</span></div><p class="muted">Paste a maintenance narrative. The built-in extractor recognizes only explicit equipment, observation, action, OPEN/MONITORING status, next shift and author. It is not an AI model and does not guess missing facts.</p><label for="raw-note">Technician narrative (optional)</label><textarea id="raw-note" maxlength="2000" placeholder="On ETCH-01 during the Day shift, I observed...">${escape(rawNote)}</textarea><div class="note-buttons"><button type="button" class="button secondary small" data-action="note-sample">Load narrative example</button><button type="button" class="button small" data-action="generate-draft">Generate demo draft →</button></div><p class="note-status" id="note-message" role="status">${escape(noteMessage)}</p><p class="hint">Unrecognized notes are not converted. You can always enter and confirm the structured fields manually.</p></section>`;
+ return header+context()+steps(0)+narrativePanel+`<div class="two-column"><section class="panel"><div class="panel-title"><h2>Shift observation</h2><button class="text-button" data-action="sample">Load sample record</button></div><form id="record-form" novalidate><div id="validation-errors" class="validation-box" role="alert" hidden></div><div class="form-grid"><div class="field"><label for="equipment-locked">Equipment ID</label><input id="equipment-locked" value="${equipmentId}" readonly aria-describedby="equipment-hint"><p class="hint" id="equipment-hint">Switch equipment using the workspace selector above.</p></div><div class="field"><label for="issueId">Related issue</label><select name="issueId" id="issueId"><option value="">New observation / new issue</option>${issues.map(i=>`<option value="${escape(i.issueId)}" ${draft.issueId===i.issueId?'selected':''}>${escape(i.issueId)} · ${i.status}</option>`).join('')}</select><span class="field-error" id="issueId-error"></span></div>${formField('timestamp','Observation time (UTC)','datetime-local',true)}${formField('author','Recorded by','text',true)}<div class="field"><label for="shift">Shift <span class="required">*</span></label><select name="shift" id="shift">${['Day','Night'].map(s=>`<option ${draft.shift===s?'selected':''}>${s}</option>`).join('')}</select><span class="field-error" id="shift-error"></span></div><div class="field"><label for="status">Issue status <span class="required">*</span></label><select name="status" id="status">${STATUSES.map(s=>`<option ${draft.status===s?'selected':''}>${s}</option>`).join('')}</select><span class="field-error" id="status-error"></span></div>${formField('symptom','Observation','textarea',true)}${formField('action','Action taken','textarea',true)}${formField('nextAction','Next action / owner','textarea',draft.status!=='RESOLVED','Required for OPEN and MONITORING issues.')}${formField('verification','Verification evidence','textarea',draft.status==='RESOLVED','Required for RESOLVED. Describe the evidence; do not infer success.')}</div><div class="form-footer"><p class="hint">Draft only. Nothing enters official demo history until review and confirmation.</p><button class="button" type="submit">Review record ${icon('arrow')}</button></div></form></section><aside class="aside-panel"><h3>Capture facts that travel.</h3><p>A useful handover separates what happened, what was done, what is still open and what comes next.</p><ul><li>Equipment context is locked to <strong>${equipmentId}</strong>.</li><li>OPEN and MONITORING require a next action.</li><li>RESOLVED requires recorded verification.</li><li>Drafts are excluded from all answers and summaries.</li></ul><div class="aside-divider"></div><h3>Simulation boundary</h3><p>All records are synthetic. This demo saves confirmed records locally in your browser and does not authenticate the named reviewer.</p></aside></div>`;
 }
 
 function history(){
@@ -82,13 +99,13 @@ function knowledge(){const sopExample=equipmentId==='ETCH-01'?'What does the SOP
 function render(focus=false){
  view=route();
  for(const link of document.querySelectorAll('[data-view]')){if(link.dataset.view===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
- $('#main').innerHTML=({overview,record:recordView,history,brief,knowledge}[view])();
+ $('#main').innerHTML=guideBanner()+({overview,record:recordView,history,brief,knowledge}[view])();
  $('#equipment-select').value=equipmentId;
  if(focus){$('#main').focus();window.scrollTo({top:0,behavior:'instant'});}
 }
 function showWarning(){const box=$('#storage-warning');box.textContent=warning;box.hidden=!warning;}
 function toast(text){$('#toast').textContent=text;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),4500);}
-function readForm(){const f=$('#record-form');if(f){const form=new FormData(f);draft={...Object.fromEntries(form),equipmentId};}return draft;}
+function readForm(){const f=$('#record-form');if(f){const form=new FormData(f);draft={...draft,...Object.fromEntries(form),equipmentId,rawNote};}return draft;}
 function validation(errors){
  const box=$('#validation-errors');box.hidden=!errors.length;box.innerHTML=errors.length?`<strong>Complete these fields before review.</strong><ul>${errors.map(e=>`<li>${escape(e.message)}</li>`).join('')}</ul>`:'';
  for(const input of document.querySelectorAll('#record-form [name]')){const error=errors.find(e=>e.field===input.name);input.setAttribute('aria-invalid',String(!!error));const message=document.getElementById(`${input.name}-error`);if(message)message.textContent=error?.message||'';}
@@ -96,19 +113,20 @@ function validation(errors){
 }
 function switchEquipment(id,target){
  if(!data.equipment.some(e=>e.id===id))return;
- if(id!==equipmentId){equipmentId=id;draft=null;review=null;lastSaved=null;answer=null;question='';historyQuery='';historyStatus='ALL';toast(`Workspace switched to ${id}. Evidence is isolated to this equipment.`);}
+ if(id!==equipmentId){equipmentId=id;draft=null;review=null;lastSaved=null;answer=null;question='';rawNote='';noteMessage='';guidedStep=-1;historyQuery='';historyStatus='ALL';toast(`Workspace switched to ${id}. Evidence is isolated to this equipment.`);}
  if(target&&location.hash!==`#${target}`)location.hash=target;else render();
 }
 function inspectSource(id){
  const s=resolveSource(data,local,id,equipmentId);
  if(!s){toast('This source is not available in the current equipment scope.');return;}
  const isSop=!!s.document;
- $('#source-content').innerHTML=`<h2 id="source-title" class="source-heading">${escape(s.id)}</h2><div class="source-badges"><span class="badge">${escape(s.equipmentId)}</span><span class="badge confirmed">${isSop?'FICTIONAL SOP':'HUMAN-CONFIRMED DEMO'}</span>${!isSop?badge(s.status):''}</div><dl class="detail-list">${isSop?detail('Document / section',s.document+' '+s.section)+detail('Revision',s.revision)+detail('Version status',sopVersionState(s,data)+' (scenario '+data.scenarioDate+')')+detail('Approval state',s.approvalStatus)+detail('Effective date',s.effectiveDate)+detail('Retired date',s.retiredDate)+detail('Supersedes',s.supersedesId)+detail('Superseded by',s.supersededById)+detail('Title',s.title)+detail('Source text',s.text):detail('Related issue',s.issueId)+detail('Observation time',date(s.timestamp))+detail('Recorded by / shift',s.author+' / '+s.shift)+detail('Observation',s.symptom)+detail('Action taken',s.action)+detail('Status at entry',s.status)+detail('Next action',s.nextAction)+detail('Verification evidence',s.verification)+detail('Confirmed by',s.confirmedBy)+detail('Confirmation time',date(s.confirmedAt))}</dl><div class="source-note">${isSop?'Synthetic reference only. SUPERSEDED, EXPIRED or WITHDRAWN versions are archival and must not be treated as current maintenance guidance. No actual operation is authorized.':'Synthetic source record. Confirmation is simulated and does not authenticate the named reviewer.'}</div>`;
+ $('#source-content').innerHTML=`<h2 id="source-title" class="source-heading">${escape(s.id)}</h2><div class="source-badges"><span class="badge">${escape(s.equipmentId)}</span><span class="badge confirmed">${isSop?'FICTIONAL SOP':'HUMAN-CONFIRMED DEMO'}</span>${!isSop?badge(s.status):''}</div><dl class="detail-list">${isSop?detail('Document / section',s.document+' '+s.section)+detail('Revision',s.revision)+detail('Version status',sopVersionState(s,data)+' (scenario '+data.scenarioDate+')')+detail('Approval state',s.approvalStatus)+detail('Effective date',s.effectiveDate)+detail('Retired date',s.retiredDate)+detail('Supersedes',s.supersedesId)+detail('Superseded by',s.supersededById)+detail('Title',s.title)+detail('Source text',s.text):detail('Related issue',s.issueId)+detail('Observation time',date(s.timestamp))+detail('Recorded by / shift',s.author+' / '+s.shift)+detail('Observation',s.symptom)+detail('Action taken',s.action)+detail('Status at entry',s.status)+detail('Next action',s.nextAction)+detail('Verification evidence',s.verification)+(s.rawNote?detail('Original raw note',s.rawNote):'')+detail('Confirmed by',s.confirmedBy)+detail('Confirmation time',date(s.confirmedAt))}</dl><div class="source-note">${isSop?'Synthetic reference only. SUPERSEDED, EXPIRED or WITHDRAWN versions are archival and must not be treated as current maintenance guidance. No actual operation is authorized.':'Synthetic source record. Confirmation is simulated and does not authenticate the named reviewer.'}</div>`;
  $('#source-dialog').showModal();
 }
-function ask(q){question=q.trim();$('#question').value=question;answer=answerQuestion(data,local,equipmentId,question);$('#answer-result').innerHTML=answerHTML();}
+function ask(q){question=q.trim();$('#question').value=question;answer=answerQuestion(data,local,equipmentId,question);if(guidedStep===4)render();else $('#answer-result').innerHTML=answerHTML();}
 
 document.addEventListener('input',event=>{
+ if(event.target.id==='raw-note'){rawNote=event.target.value;noteMessage='Note updated. Re-run the extractor or check the structured fields manually.';const status=$('#note-message');if(status)status.textContent=noteMessage;}
  if(event.target.closest('#record-form')){readForm();review=null;}
  if(event.target.id==='history-search'){
    historyQuery=event.target.value;
@@ -127,7 +145,7 @@ document.addEventListener('change',event=>{
  }}
 });
 document.addEventListener('submit',event=>{
- if(event.target.id==='record-form'){event.preventDefault();readForm();const errors=validateRecord(draft,data);validation(errors);if(!errors.length){review=reviewRecord(draft,data);render(true);}}
+ if(event.target.id==='record-form'){event.preventDefault();readForm();const errors=validateRecord(draft,data,local);validation(errors);if(!errors.length){review=reviewRecord(draft,data,local);render(true);}}
  if(event.target.id==='question-form'){event.preventDefault();ask($('#question').value);}
 });
 document.addEventListener('click',event=>{
@@ -135,26 +153,59 @@ document.addEventListener('click',event=>{
  const scoped=event.target.closest('[data-equipment]');if(scoped){switchEquipment(scoped.dataset.equipment,scoped.dataset.target);return;}
  const example=event.target.closest('[data-question]');if(example){ask(example.dataset.question);return;}
  const action=event.target.closest('[data-action]')?.dataset.action;
+ if(action==='tour-start'){
+   // Starting the tour is non-destructive: prior browser-local records remain intact.
+   equipmentId='ETCH-01';guidedStep=0;rawNote='';noteMessage='';draft=null;review=null;lastSaved=null;answer=null;question='';
+   location.hash='#overview';render(true);
+ }
+ if(action==='tour-next'){
+   if(guidedStep===0){
+     guidedStep=1;rawNote=data.guidedDemoNote;noteMessage='';draft=defaultDraft();review=null;lastSaved=null;
+     if(location.hash!=='#record')location.hash='#record';else render(true);
+   }else if(guidedStep===3&&view==='record'){
+     if(location.hash!=='#brief')location.hash='#brief';else render(true);
+   }else if(guidedStep===3&&view==='brief'){
+     guidedStep=4;question='What issues are open on ETCH-01?';answer=null;
+     if(location.hash!=='#knowledge')location.hash='#knowledge';else render(true);
+   }
+ }
+ if(action==='tour-exit'){guidedStep=-1;render();toast('Guided demo closed. Your confirmed demo records are unchanged.');}
+ if(action==='tour-finish'){guidedStep=-1;render();toast('Guided demo complete. Review the cited evidence anytime.');}
+ if(action==='note-sample'){
+   rawNote=equipmentId==='ETCH-01'?data.guidedDemoNote:data.guidedDemoNote.replaceAll('ETCH-01',equipmentId).replace('chamber door indicator','wafer transfer sensor');
+   noteMessage='Synthetic example loaded. Generate the demo draft to extract its explicitly stated fields.';
+   render();
+ }
+ if(action==='generate-draft'){
+   const result=parseShiftNote(rawNote,equipmentId);
+   noteMessage=result.message;
+   if(result.supported){
+     draft={...defaultDraft(),...result.draft};review=null;lastSaved=null;
+     if(guidedStep===1)guidedStep=2;
+   }
+   render();
+ }
  if(action==='close-source')$('#source-dialog').close();
  if(action==='sample'){
+   rawNote='';noteMessage='';
    const latest=openIssues(equipmentId).find(i=>data.records.some(r=>r.issueId===i.issueId));draft={...defaultDraft(),issueId:latest?.issueId||'',author:'Jamie Park',symptom:latest?(equipmentId==='ETCH-01'?'Pumpdown drift remains visible in the synthetic trend.':'The reflected RF event remains under review.'):'New synthetic observation recorded for review.',action:'Reviewed the previous shift record and preserved the new observation. No repair was performed.',nextAction:'Next shift: review recurrence with the equipment owner and retain the source record.',verification:'No repair verification; issue remains open.'};review=null;render();toast('Sample loaded as an unconfirmed draft. Review before saving.');
  }
  if(action==='edit-record'){review=null;render(true);}
- if(action==='new-record'){lastSaved=null;review=null;draft=defaultDraft();render(true);}
+ if(action==='new-record'){lastSaved=null;review=null;draft=defaultDraft();rawNote='';noteMessage='';render(true);}
  if(action==='save-record'){
    if(!review||!$('#acknowledge')?.checked)return;
    try{
-     const id=`LOCAL-${crypto.randomUUID()}`,saved=confirmRecord(review,true,data,id),next=[...local,saved];
+     const id=`LOCAL-${crypto.randomUUID()}`,saved=confirmRecord(review,true,data,id,local),next=[...local,saved];
      if(!storageWritable)throw new Error('Browser storage is unavailable. The record remains unconfirmed; no save was claimed.');
      window.localStorage.setItem(STORAGE_KEY,JSON.stringify(next));
      const readback=restoreRecords(window.localStorage.getItem(STORAGE_KEY),data);
      if(!readback.records.some(r=>r.id===saved.id))throw new Error('The saved record could not be read back. No successful save was confirmed.');
-     local=readback.records;lastSaved=saved;review=null;draft=null;answer=null;warning=readback.warning;showWarning();render(true);toast('Confirmed demo record saved locally.');
+     local=readback.records;lastSaved=saved;review=null;draft=null;answer=null;warning=readback.warning;if(guidedStep===2)guidedStep=3;showWarning();render(true);toast('Confirmed demo record saved locally.');
    }catch(error){warning=error.message||'Local save failed. No successful save was confirmed.';showWarning();toast('Save failed. Keep this review open and try again.');}
  }
  if(action==='cancel-reset')$('#reset-dialog').close();
  if(action==='confirm-reset'){
-   try{window.localStorage.removeItem(STORAGE_KEY);local=[];draft=null;review=null;lastSaved=null;answer=null;question='';warning='';storageWritable=true;showWarning();$('#reset-dialog').close();render();toast('Local demo records reset. Synthetic seed records retained.');}
+   try{window.localStorage.removeItem(STORAGE_KEY);local=[];draft=null;review=null;lastSaved=null;answer=null;question='';rawNote='';noteMessage='';guidedStep=-1;warning='';storageWritable=true;showWarning();$('#reset-dialog').close();render();toast('Local demo records reset. Synthetic seed records retained.');}
    catch{warning='Browser storage could not be reset. Your displayed records were retained.';showWarning();$('#reset-dialog').close();}
  }
  if(event.target.closest('#reset-demo'))$('#reset-dialog').showModal();
